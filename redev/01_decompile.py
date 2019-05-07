@@ -4,6 +4,7 @@ import fcntl
 import os
 import subprocess
 import os
+import logging
 
 from contextlib import contextmanager
 
@@ -19,6 +20,12 @@ byte_start = '\0\0\1\14'
 byte_end = '\0\0\1\15'
 
 GHIDRA_PATH='/home/ws/repo/ghidra/build/dist/ghidra_9.1-DEV'
+
+
+os.remove("mylog.log")
+logfmt = "%(asctime)s : %(funcName)s: %(lineno)d : %(message)s"
+logging.basicConfig(filename="mylog.log", format=logfmt, level=logging.DEBUG)
+
 
 class Decompiler():
     ops = [
@@ -805,12 +812,14 @@ class Decompiler():
 
         type_ = self.read_to_burst()
         while type_ != 7:
-            print ('read_response', type_)
+            msg = "read_response {}".format(str(type_))
+            logging.info(msg)
             if type_ == 4:
-                print("read_query_string")
+                logging.info("read_query_string")
                 name = self.read_query_string()
-                print("query_string", name)
-                print(name)
+                msg = "query_string {}".format(str(name))
+                logging.info(msg)
+                logging.info(name)
                 if name == b'getUserOpName':
                     index = int(self.read_query_string())
                     if index>=len(self.ops):
@@ -819,7 +828,8 @@ class Decompiler():
                         self.stdin.write(query_response_end)
                     else:
                         self.stdin.write(query_response_start)
-                        print (index, self.ops[index])
+                        msg = "{} {}".format(str(index), str(self.ops[index]))
+                        logging.info("Write OpName: {}".format(msg))
                         self.write_string(self.ops[index])
                         self.stdin.write(query_response_end)
                 elif name == b'getRegister':
@@ -845,7 +855,8 @@ class Decompiler():
                         addr = dom.getElementsByTagName('addr')[0]
                         space = addr.getAttribute('space')
                         offset = addr.getAttribute('offset')
-                        print (space, offset)
+                        msg = "{} {}".format(str(space), str(offset))
+                        logging.info(msg)
 
                     self.stdin.write(query_response_start)
 
@@ -859,7 +870,8 @@ class Decompiler():
                     self.stdin.write(query_response_end)
                 elif name == b'getMappedSymbolsXML':
                     query = self.read_query_string()
-                    print("getMappedSymbolsXML", query)
+                    msg = "getMappedSymbolsXML {}".format(str(query))
+                    logging.info(msg)
                     self.stdin.write(query_response_start)
                     self.write_string(b'''<result>
                         <parent>
@@ -895,28 +907,29 @@ class Decompiler():
                 self.stdin.flush()
                 self.read_to_burst()
             elif type_ == 14:
-                print("BEGIN COMPILER OUTPUT")
+                logging.info("BEGIN COMPILER OUTPUT")
                 buf = b''
             elif type_ == 15:
                 retbuf = buf
                 buf = None
             elif type_ == 16:
-                print("NESTED COMPILER OUTPUT")
+                logging.info("NESTED COMPILER OUTPUT")
                 buf = b''
             elif type_ == 17:
-                print (buf)
+                logging.info(buf)
                 buf = None
             else:
                 raise Exception("Unknown type ({})".format(type_))
 
-            print("X")
+            logging.info("X")
             if buf == None:
                 type_ = self.read_to_burst()
             else:
                 (type_, buf2) = self.read_to_buffer()
-                print(type, buf2)
+                msg = str(type) + str(buf2)
+                logging.info(msg)
                 buf = buf + buf2
-            print("Y")
+            logging.info("Y")
 
             # or read to buffer?
 
@@ -959,7 +972,8 @@ class Decompiler():
 
             if cur == 1:
                 cur = self.read_byte()
-                print('read_to_buff', cur, bytes(buff))
+                msg = "read_to_buff {} {}".format(str(cur), str(bytes(buff)))
+                logging.info(msg)
                 return (cur, bytes(buff))
 
         raise Exception("Decompiler process died")
@@ -985,10 +999,11 @@ class Decompiler():
     def read(self):
         return self.p.stdout.raw.read(4096)
 
+logging.info("Invoke Decompiler()")
 decompiler = Decompiler()
-
 p = decompiler
 
+logging.info("registerProgram")
 with decompiler.write_command() as cmd:
     cmd.write_string(b'registerProgram')
 
@@ -1053,9 +1068,11 @@ with decompiler.write_command() as cmd:
         <type name="float" size="4" metatype="float" id="-120139017508053025"/>
     </coretypes>''')
 
-print(decompiler.read_response())
+decompiler.read_response()
+logging.info("Just invoked decompiler.read_response()")
 
 # set options
+logging.info("setOptions")
 with decompiler.write_command() as cmd:
     cmd.write_string(b'setOptions')
     cmd.write_string(b'0')
@@ -1118,24 +1135,30 @@ with decompiler.write_command() as cmd:
 	<protoeval>__stdcall</protoeval>
 </optionslist>''')
 
-print(decompiler.read_response())
+decompiler.read_response()
+logging.info("Just invoked decompiler.read_response()")
 
-print ("decompileAt")
+logging.info("decompileAt")
 with decompiler.write_command() as cmd:
     cmd.write_string(b'decompileAt')
     cmd.write_string(b'0')
     cmd.write_string(b'''<addr space="ram" offset="0x413c8c"/>''')
 
-print(decompiler.read_response())
+decompiler.read_response()
+logging.info("Just invoked decompiler.read_response()")
 
+logging.info("flushNative")
 with decompiler.write_command() as cmd:
     cmd.write_string(b'flushNative')
     cmd.write_string(b'0')
 
-print(decompiler.read_response())
+decompiler.read_response()
+logging.info("Just invoked decompiler.read_response()")
 
+logging.info("deregisterProgram")
 with decompiler.write_command() as cmd:
     cmd.write_string(b'deregisterProgram')
     cmd.write_string(b'0')
 
-print(decompiler.read_response())
+decompiler.read_response()
+logging.info("Just invoked decompiler.read_response()")
