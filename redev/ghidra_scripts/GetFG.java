@@ -1,3 +1,4 @@
+
 /* ###
  * IP: GHIDRA
  *
@@ -21,15 +22,20 @@ import ghidra.app.script.GhidraScript;
 import ghidra.program.model.address.AddressSetView;
 import ghidra.program.database.code.InstructionDB;
 import ghidra.program.model.listing.*;
+import ghidra.program.model.address.AddressSetView;
+import ghidra.program.model.block.*;
+import ghidra.program.model.listing.Function;
+import ghidra.program.model.listing.Program;
+import ghidra.util.exception.CancelledException;
+import ghidra.util.task.TaskMonitor;
 
-public class PrintInst extends GhidraScript {
+public class GetFG extends GhidraScript{
     @Override
-    public void run() {
+    public void run()  throws CancelledException {
 
         Listing listing = state.getCurrentProgram().getListing();
         FunctionIterator fiter = listing.getFunctions(true);
         CodeUnitFormat cuf = getCodeUnitFormat();
-
 
         while (fiter.hasNext() && !monitor.isCancelled()) {
             Function f = fiter.next();
@@ -38,18 +44,16 @@ public class PrintInst extends GhidraScript {
             if (!fname.equals("main"))
                 continue;
 
-            // Body
-            AddressSetView set = f.getBody();
-            InstructionIterator iiter = listing.getInstructions(set, true);
+            CodeBlockModel blockModel = new BasicBlockModel(state.getCurrentProgram());
+            AddressSetView addresses = f.getBody();
+            CodeBlockIterator iterator = blockModel.getCodeBlocksContaining(addresses, monitor);
 
-            while (iiter.hasNext() && !monitor.isCancelled()) {
-                InstructionDB instr = (InstructionDB)iiter.next();
-                String si = cuf.getRepresentationString(instr);
+            for (; iterator.hasNext();) {
+                CodeBlock codeBlock = iterator.next();
 
-                //println("instruction: "+i.getMnemonicString());
-                println("instruction: " + si);
+                println(codeBlock.toString());
             }
-        }
 
+        }
     }
 }
