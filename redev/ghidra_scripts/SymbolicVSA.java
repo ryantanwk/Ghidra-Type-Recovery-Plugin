@@ -19,12 +19,15 @@
 
 import java.io.IOException;
 import java.util.*;     // Map & List
-import java.lang.Math; 
+import java.lang.Math;
 
 import ghidra.program.model.listing.*;
 import ghidra.program.model.block.*;    //CodeBlock && CodeBlockImpl
 import ghidra.program.model.address.*;
 import ghidra.program.model.lang.OperandType;
+import ghidra.program.model.lang.Register;
+import ghidra.program.model.scalar.Scalar;
+
 
 import ghidra.program.database.*;
 import ghidra.program.database.function.*;
@@ -41,6 +44,7 @@ public class SymbolicVSA extends GhidraScript {
 
     @Override
     public void run() {
+        HardwareArch arch = new LArchX86();
         program = state.getCurrentProgram();
         listing = program.getListing();
 
@@ -52,17 +56,17 @@ public class SymbolicVSA extends GhidraScript {
             long fentry = f.getEntryPoint().getOffset();
 
             // Entry-point
-            if (fentry != 0x0401d92) // _ZN6Animal9printInfoEv
+            if (fentry != 0x401e1e)
                 continue;
 
             println("Function Entry: " + f.getEntryPoint());
             println("Function Name: " + f.getName());
 
-            smar = new FunctionSMAR(program, listing, f, monitor);
+            smar = new FunctionSMAR(arch, program, listing, f, monitor);
             smar.doRecording();
 
             Map<String, Set<String>> smart = smar.getMAARTable();
-            println(smart.toString());            
+            println(smart.toString());
         }
     }
 
@@ -87,6 +91,7 @@ public class SymbolicVSA extends GhidraScript {
    Every symbolic value defines a domain
    */
 class FunctionSMAR {
+    private final HardwareArch m_arch;
     private final Program m_program;
     private final Listing m_listDB;
     private final Function m_function;
@@ -97,10 +102,8 @@ class FunctionSMAR {
     private Map<String, Set<String>> m_SMARTable;   // The function-level memory-access table
     private Map<Address, BlockSMAR> m_blocks;       // All blocks in this function
 
-    /* for x86-64 */
-    static final String [] x86Regs = {"RAX", "RBX", "RCX", "RDX", "RDI", "RSI", "RBP", "RSP", "R8", "R9", "R10", "R11", "R12", "R13", "R14", "R15"};
-
-    public FunctionSMAR(Program program, Listing listintDB, Function func, TaskMonitor monitor) {
+    public FunctionSMAR(HardwareArch arch, Program program, Listing listintDB, Function func, TaskMonitor monitor) {
+        m_arch = arch;
         m_program = program;
         m_listDB = listintDB;
         m_function = func;
@@ -118,7 +121,8 @@ class FunctionSMAR {
 
     private void InitMachineStatus() {
         /* Set register values to symbols */
-        for (String reg: x86Regs) {
+        String[] allRegs = m_arch.getRegisters();
+        for (String reg: allRegs) {
             m_registers.put(reg, "V" + reg);
         }
         /* Doesn't need to initialize memory space */
@@ -130,7 +134,8 @@ class FunctionSMAR {
         }
 
         /* initialize m_SMART */
-        for (String reg: x86Regs) {
+        String[] allRegs = m_arch.getRegisters();
+        for (String reg: allRegs) {
             Set<String> vs = new HashSet<String>();
             vs.add("V" + reg);
             m_SMARTable.put(reg, vs);
@@ -146,7 +151,7 @@ class FunctionSMAR {
             CodeBlockIterator codeblkIt = blkModel.getCodeBlocksContaining(addrSV, m_monitor);
             while (codeblkIt.hasNext()) {
                 CodeBlock codeBlk = codeblkIt.next();
-                BlockSMAR smarBlk = new BlockSMAR(m_program, m_listDB, m_function, codeBlk);
+                BlockSMAR smarBlk = new BlockSMAR(m_arch, m_program, m_listDB, m_function, codeBlk);
                 Address addrStart = codeBlk.getFirstStartAddress();
                 m_blocks.put(addrStart, smarBlk);
             }
@@ -211,10 +216,12 @@ class FunctionSMAR {
 
 /* just for x86-64 */
 class BlockSMAR {
+    private HardwareArch m_arch;
     private Program m_program;
     private Listing m_listDB;
     private Function m_function;
     private CodeBlock m_block;
+
 
     private Set<BlockSMAR> m_nexts;
     private int m_runs;
@@ -226,7 +233,9 @@ class BlockSMAR {
     Map<String, String> m_regStatus;
     Map<String, String> m_memStatus;
 
-    public BlockSMAR(Program program, Listing listintDB, Function function, CodeBlock block) {
+
+    public BlockSMAR(HardwareArch arch, Program program, Listing listintDB, Function function, CodeBlock block) {
+        m_arch = arch;
         m_program = program;
         m_listDB = listintDB;
         m_function = function;
@@ -288,164 +297,331 @@ class BlockSMAR {
         m_memStatus = memory_status;
 
         /* iterate every instruction in this block */
-        String tmpAddr = null;
-        String tmpValue = null;
-        Set<String> tmpSet = null;
         AddressSet addrSet = m_block.intersect(m_function.getBody());
         InstructionIterator iiter = m_listDB.getInstructions(addrSet, true);
 
         while (iiter.hasNext()) {
             InstructionDB inst = (InstructionDB)iiter.next();
-            String op = inst.getMnemonicString();
+            int nOprand = inst.getNumOperands();
 
-            if(op.equalsIgnoreCase("push")) {
-                /* push reg; push 0x1234; */
-                System.out.println(inst.toString());
-                String oprd = inst.getDefaultOperandRepresentation(0);
-                int oprdty = inst.getOperandType(0);
-
-                /* Get oprand value & upadte MAR-table */
-                if (OPRDTYPE.isRegister(oprdty)) { // register
-                    tmpValue = m_regStatus.get(oprd);
-                }
-                else if (OPRDTYPE.isScalar(oprdty)){ // Constant value
-                    tmpValue = oprd;
-                }
-                else { // must be address: two memory oprand does't supported by x86 and ARM
-                    System.err.println("Wrong operand");
-                }
-
-                /* Update MAR-table & register status */
-                tmpAddr = m_regStatus.get("RSP");
-                tmpAddr = symbolicSub(tmpAddr, 8);
-                updateRegister("RSP", tmpAddr);
-
-                /* Update MAR-table & memory status */
-                tmpAddr = m_regStatus.get("RSP");
-                updateMemoryWriteAccess(tmpAddr, tmpValue);
+            if (nOprand == 0) {
+                _doRecording0(inst);
             }
-
-            else if (op.equalsIgnoreCase("pop")) {
-                /* pop reg */
-                System.out.println(inst.toString());
-                String oprd = inst.getDefaultOperandRepresentation(0);
-                int oprdty = inst.getOperandType(0);
-                
-                /* operand must be a reigster. Other type of memory access does't supported by x86 and ARM  */
-                assert(OPRDTYPE.isRegister(oprdty));
-
-                // tmpAddr = m_regStatus.get("RSP");
-                // updateMemoryReadAccess(tmpAddr);
-
-                /* Get value from stack && update rigister status */
-                tmpValue = m_regStatus.get("RSP");
-                tmpValue = m_memStatus.get(tmpValue);
-                updateRegister(oprd, tmpValue);
-                
-                /* Clean memory status */
-                tmpValue = m_regStatus.get("RSP");
-                m_memStatus.remove(tmpValue);
-
-                /* Update RSP register status */
-                tmpValue = m_regStatus.get("RSP");
-                tmpValue = symbolicAdd(tmpValue, 8);
-                updateRegister("RSP", tmpValue);            
+            else if (nOprand == 1)  {
+                _doRecording1(inst);
             }
-
-            else if (op.equalsIgnoreCase("sub")) {
-                /* sub reg, reg; sub reg, 0x1234; sub reg, mem; sub mem, reg; sub mem, 0x1234 */
-                System.out.println(inst.toString());
-                String oprd = inst.getDefaultOperandRepresentation(0);
-                int oprdty = inst.getOperandType(0);
-
-                /* operand must be a reigster. Other type of memory access does't supported by x86 and ARM  */
-                assert(OPRDTYPE.isRegister(oprdty));
-
-                /* Get value from stack && update rigister status */
-                //tmpValue = m_regStatus.get("RSP");
-                //tmpSet = m_smarTable.get(tmpValue);
-                //assert(tmpSet != null);
-                //m_regStatus.put(oprd, tmpValue);
-
-                /* Update RSP register status */
-                //tmpValue = m_regStatus.get("RSP");
-                //tmpValue = symbolicAdd(tmpValue, 8);
-                //m_regStatus.put("RSP", tmpValue);
+            else if (nOprand == 2)  {
+                _doRecording2(inst);
             }
-
-            else if (op.equals("add")) {
-                continue;
-            }
-
-            else if (false && op.equalsIgnoreCase("mov")) {
-                /* mov reg, reg; mov reg, mem; mov reg, 0x1234; mov mem, reg; mov mem, 0x1234 */
-                System.out.println(inst.toString());
-                int oprd0ty = inst.getOperandType(0);
-                int oprd1ty = inst.getOperandType(1);
-                Object[] src = null;
-                Object[] dst = null;
-
-                if (OPRDTYPE.isRegister(oprd0ty)) {
-                    String oprd0 = inst.getDefaultOperandRepresentation(0);
-
-                    if (OPRDTYPE.isRegister(oprd1ty)) {
-                        String oprd1 = inst.getDefaultOperandRepresentation(1);
-
-                        tmpValue = m_regStatus.get(oprd1);
-                        updateRegister(oprd0, tmpValue);                      
-                    }
-                    else if (OPRDTYPE.isScalar(oprd1ty)){
-                        String oprd1 = inst.getDefaultOperandRepresentation(1);
-                        
-                        updateRegister(oprd0, oprd1);   
-                    }
-                    else if (OPRDTYPE.isAddress(oprd1ty)) {
-                        /* fix me */
-                        dst = inst.getOpObjects(1);
-                        for (Object o: dst) {
-                            System.out.println(o.getClass().getSimpleName());
-                            System.out.println(o.toString());
-                        }
-                    }
-                    else {
-                        /* Throw exception */
-                    }                
-                }
-                else if (OPRDTYPE.isAddress(oprd0ty)) {
-                    src = inst.getOpObjects(0);
-
-                    if (OPRDTYPE.isRegister(oprd1ty)) {
-
-                    }
-                    else if (OPRDTYPE.isScalar(oprd1ty)){
-
-                    }
-                    else {
-                        /* Throw exception */
-                    }
-
-                }
-                else {
-                    /* Throw exception */
-                    System.err.println("Invalid instruction?");
-                }
-            }         
-            
             else {
-                continue;
+
             }
         }
     }
 
-    
+    void _doRecording0(InstructionDB inst) {
+
+    }
+
+    void _doRecording1(InstructionDB inst) {
+        String strAddr = null;
+        String strValue = null;
+        Set<String> tmpSet = null;
+
+        String op = inst.getMnemonicString();
+
+        if(op.equalsIgnoreCase("push")) {
+            /* push reg; push 0x1234; */
+            System.out.println(inst.toString());
+            String oprd = inst.getDefaultOperandRepresentation(0);
+            int oprdty = inst.getOperandType(0);
+
+            /* Get oprand value & upadte MAR-table */
+            if (OPRDTYPE.isRegister(oprdty)) { // register
+                strValue = m_regStatus.get(oprd);
+            }
+            else if (OPRDTYPE.isScalar(oprdty)){ // Constant value
+                strValue = oprd;
+            }
+            else { // must be address: two memory oprand does't supported by x86 and ARM
+                System.err.println("Wrong operand");
+            }
+
+            /* Update MAR-table & register status */
+            strAddr = m_regStatus.get("RSP");
+            strAddr = symbolicSub(strAddr, 8);
+            updateRegister("RSP", strAddr);
+
+            /* Update MAR-table & memory status */
+            strAddr = m_regStatus.get("RSP");
+            updateMemoryWriteAccess(strAddr, strValue);
+        }
+
+        else if (op.equalsIgnoreCase("pop")) {
+            /* pop reg */
+            System.out.println(inst.toString());
+            String oprd = inst.getDefaultOperandRepresentation(0);
+            int oprdty = inst.getOperandType(0);
+
+            /* operand must be a reigster. Other type of memory access does't supported by x86 and ARM  */
+            assert(OPRDTYPE.isRegister(oprdty));
+
+            // strAddr = m_regStatus.get("RSP");
+            // updateMemoryReadAccess(strAddr);
+
+            /* Get value from stack && update rigister status */
+            strValue = m_regStatus.get("RSP");
+            strValue = m_memStatus.get(strValue);
+            updateRegister(oprd, strValue);
+
+            /* Clean memory status */
+            strValue = m_regStatus.get("RSP");
+            m_memStatus.remove(strValue);
+
+            /* Update RSP register status */
+            strValue = m_regStatus.get("RSP");
+            strValue = symbolicAdd(strValue, 8);
+            updateRegister("RSP", strValue);
+        }
+        else {
+            System.out.println("fix-me:387");
+        }
+    }
+
+    void _doRecording2(InstructionDB inst) {
+        int oprd0ty = inst.getOperandType(0);
+        int oprd1ty = inst.getOperandType(1);
+        String op = inst.getMnemonicString();
+
+        String strVal0, strVal1, strAddr0, strAdd1;
+        String strValue, strAddress;
+        String oprd0, oprd1;
+        long iVal0, iVal1;
+        
+        Object[] objs;
+
+        if (op.equalsIgnoreCase("sub")) {
+            /* sub reg, reg; sub reg, 0x1234; sub reg, mem; sub mem, reg; sub mem, 0x1234 */
+            System.out.println(inst.toString());
+
+            if (OPRDTYPE.isRegister(oprd0ty)) {                
+                oprd0 = inst.getDefaultOperandRepresentation(0);
+
+                if (OPRDTYPE.isRegister(oprd1ty)) {
+                    /* sub reg, reg */                
+                    strVal0 = m_regStatus.get(oprd0);
+                    oprd1 = inst.getDefaultOperandRepresentation(1);
+                    strVal1 = m_regStatus.get(oprd1);
+
+                    /* fix-me */
+                    //strValue = symbolicSub(String Symobl0, String Symbol1);
+                    strValue = "";
+
+                    updateRegister(oprd0, strValue);
+                }
+                else if (OPRDTYPE.isScalar(oprd1ty)){
+                    /* sub rsp, 8; */
+                    strVal0 = m_regStatus.get(oprd0);
+                    oprd1 = inst.getDefaultOperandRepresentation(1);
+                    strValue = symbolicSub(strVal0, Integer.decode(oprd1));       
+
+                    /* upate register status */
+                    updateRegister(oprd0, strValue);
+                }
+                else {
+                    /* others */
+                    System.out.println("fix-me:433");
+                }
+            }
+            else {
+                /* others */
+                System.out.println("fix-me:439");
+            }
+        }
+
+        else if (op.equals("add")) {
+            return;
+        }
+
+        else if (op.equalsIgnoreCase("mov")) {
+            /* mov reg, reg; mov reg, mem; mov reg, 0x1234; mov mem, reg; mov mem, 0x1234 */
+            if (OPRDTYPE.isRegister(oprd0ty)) {
+                System.out.println(inst.toString());
+                
+                oprd0 = inst.getDefaultOperandRepresentation(0);
+                if (OPRDTYPE.isRegister(oprd1ty)) {
+                    /* mov reg, reg */
+                    oprd1 = inst.getDefaultOperandRepresentation(1);
+
+                    strValue = m_regStatus.get(oprd1);
+                    updateRegister(oprd0, strValue);
+                }
+                else if (OPRDTYPE.isScalar(oprd1ty)){
+                    /* mov rax, 8; */
+                    oprd1 = inst.getDefaultOperandRepresentation(1);
+
+                    /* upate register status */
+                    updateRegister(oprd0, oprd1);
+                }
+                else { /* memory oprand */
+                    objs = inst.getOpObjects(1);
+
+                    if (objs.length == 1) {
+                        /* mov reg, [reg]; mov reg, [0x48000] */
+                        if (objs[0] instanceof Register) {
+                            Register r = (Register)objs[0];
+
+                            /* update memory access */
+                            strValue = m_regStatus.get(r.getName());
+                            updateMemoryReadAccess(strValue);
+
+                            /* fetch the value from the memory elememt */
+                            strValue = m_memStatus.get(strValue);
+
+                            /* upate register status */
+                            updateRegister(oprd0, strValue);
+
+                        }
+                        else if (objs[0] instanceof Scalar) {
+                            Scalar s = (Scalar)objs[0];
+
+                            /* update memory access */
+                            strAddress = String.valueOf(s.getValue());
+                            updateMemoryReadAccess(strAddress);
+
+                            /* fetch the value from the memory elememt */
+                            strValue = m_memStatus.get(strAddress);
+
+                            /* upate register status */
+                            updateRegister(oprd0, strValue);
+                        }
+                        else {
+                            /* Throw exception */
+                            System.err.println("fix-me 500");
+                        }
+
+                    }
+                    else if (objs.length == 2) {
+                        /* Registet + Scaler: i.e [RBP + -0x28] */
+                        assert((objs[0] instanceof Register) && (objs[1] instanceof Scalar));
+                        Register r = (Register)objs[0];
+                        Scalar s = (Scalar)objs[1];
+
+                        strAddress = m_regStatus.get(r.getName());
+                        strAddress = symbolicAdd(strAddress, s.getValue());
+
+                        /* update memory access */
+                        updateMemoryReadAccess(strAddress);
+
+                        /* fetch the value from the memory elememt */
+                        strValue = m_memStatus.get(strAddress);
+
+                        /* upate register status */
+                        updateRegister(oprd0, strValue);
+                    }
+                    else if (objs.length == 3) {
+                        /* fix-me */
+                        System.out.println("fix-me 491");
+                    }
+
+                    else {
+                        /* Throw exception */
+                        System.out.println("fix-me 530");
+                        System.out.println("type value" + String.valueOf(oprd1ty));
+                    }
+
+                    /*for (Object o: dst) {
+                        System.out.println(o.getClass().getSimpleName());
+                        System.out.println(o.toString());
+                    }*/
+                }
+            }
+            else {
+                System.out.println(inst.toString());
+                /* Ghidra bug: MOV [RAX],RDX -> _, ADDR|REG */
+                if (OPRDTYPE.isRegister(oprd1ty)) {
+                    oprd1 = inst.getDefaultOperandRepresentation(1);
+                    strVal1 = m_regStatus.get(oprd1);
+                }
+                else if (OPRDTYPE.isScalar(oprd1ty)){
+                    oprd1 = inst.getDefaultOperandRepresentation(1);
+                    strVal1 = oprd1;
+                }
+                else {
+                    /* Throw exeception */
+                    strVal1 = "";
+                    System.out.println("fix-me 549");
+                }
+
+                objs = inst.getOpObjects(0);
+
+                if (objs.length == 1) {
+                    /* mov [reg], reg; mov [0x48000], 0x1234 */
+                    if (objs[0] instanceof Register) {
+                        Register r = (Register)objs[0];
+
+                        /* update memory access */
+                        strAddr0 = m_regStatus.get(r.getName());
+                        updateMemoryWriteAccess(strAddr0, strVal1);
+                    }
+                    else if (objs[0] instanceof Scalar) {
+                        Scalar s = (Scalar)objs[0];
+
+                        /* update memory access */
+                        strAddr0 = String.valueOf(s.getValue());
+                        updateMemoryWriteAccess(strAddr0, strVal1);
+                    }
+                    else {
+                        /* Throw exception */
+                        System.err.println("fix-me 500");
+                    }
+
+                }
+                else if (objs.length == 2) {
+                    System.out.println(inst.toString());
+                    /* Registet + Scaler: i.e [RBP + -0x28] */
+                    assert((objs[0] instanceof Register) && (objs[1] instanceof Scalar));
+                    Register r = (Register)objs[0];
+                    Scalar s = (Scalar)objs[1];
+
+                    /* update memory access */
+                    strAddress = m_regStatus.get(r.getName());
+                    strAddr0 = symbolicAdd(strAddress, s.getValue());
+                    System.out.println("fix-me 591" + strAddr0 + strVal1);
+                    updateMemoryWriteAccess(strAddr0, strVal1);
+                }
+                else if (objs.length == 3) {
+                    /* fix-me */
+                    System.out.println("fix-me 491");
+                }
+
+                else {
+                    /* Throw exception */
+                    System.out.println("fix-me 530");
+                    System.out.println("type value" + String.valueOf(oprd1ty));
+                }
+            }
+        }
+
+        else {
+            return;
+        }
+    }
+
     private boolean updateRegister(String reg, String value) {
-         Set<String> tmpSet;
+        Set<String> tmpSet;
 
         /* Update MAR-table for Register reg */
+        System.out.println("515:" + reg);
         tmpSet = m_smarTable.get(reg);
+        if (tmpSet == null) {
+            reg = m_arch.getRegisterFullname(reg);
+            tmpSet = m_smarTable.get(reg);
+        }
         assert(tmpSet != null);
         tmpSet.add(value);
 
+        System.out.println("519:" + value);
         /* Update register status */
         m_regStatus.put(reg, value);
 
@@ -455,49 +631,66 @@ class BlockSMAR {
     private boolean updateMemoryWriteAccess(String address, String value) {
         Set<String> tmpSet;
 
-       /* Update MAR-table for address */
-       tmpSet = m_smarTable.get(address);
-       if (tmpSet == null) {
-            tmpSet = new HashSet<String>();
-            m_smarTable.put(address, tmpSet);
-        }
-        tmpSet.add(value);
-       
-        /* Update memory status */
-        m_memStatus.put(address, value);
-
-        return true;
-   }
-
-   private boolean updateMemoryReadAccess(String address) {
-        Set<String> tmpSet;
-
         /* Update MAR-table for address */
         tmpSet = m_smarTable.get(address);
         if (tmpSet == null) {
             tmpSet = new HashSet<String>();
             m_smarTable.put(address, tmpSet);
         }
+        tmpSet.add(value);
+
+        /* Update memory status */
+        m_memStatus.put(address, value);
+
+        return true;
+    }
+
+    private boolean updateMemoryReadAccess(String address) {
+        Set<String> tmpSet;
+
+        /* Update MAR-table for address */
+        tmpSet = m_smarTable.get(address);
+        if (tmpSet == null) {
+            String symbol;
+
+            tmpSet = new HashSet<String>();
+            m_smarTable.put(address, tmpSet);
+            
+            System.out.println("610:" + address);
+            /* make the content of current address to a symbolic value */
+            if (address.indexOf(' ') != -1) {
+                symbol = String.format("V(%s)", address.replaceAll("\\s+",""));
+            }
+            else {
+                symbol = "V" + address;
+            }
+            System.out.println("612:" + symbol);
+
+            tmpSet.add(symbol);     // Set a symbolic value
+
+            /* Update memory status */
+            m_memStatus.put(address, symbol);
+        }
         return true;
     }
 
 
     /* fix me */
-    private String symbolicAdd(String symbol, int value) {
+    private String symbolicAdd(String symbol, long value) {
         return _symbolicAddSub(symbol, '+', value);
     }
 
     /* fix me */
-    private String symbolicSub(String symbol, int value) {
+    private String symbolicSub(String symbol, long value) {
         return _symbolicAddSub(symbol, '-', value);
     }
 
-    private String _symbolicAddSub(String symbol, char op, int value) {
+    private String _symbolicAddSub(String symbol, char op, long value) {
         /* parse the old symbolic value */
         String[] elems = symbol.split("\\s", 0);
         String sOprd = null;    // symbolic oprand
-        int curValue = 0;
-        
+        long curValue = 0;
+
         if (elems.length == 1) {
             if (elems[0].charAt(0) != 'V') {
                 curValue = Integer.parseInt(elems[0]);
@@ -521,12 +714,12 @@ class BlockSMAR {
             curValue -= value;
         else /* Thow exception */
             System.err.println("Wrong format");
-           
+
 
         /* generate new symbolic value */
         String newSymbol;
-        int absValue ;
-        
+        long absValue ;
+
         absValue = Math.abs(curValue);
         if (sOprd == null) {
             newSymbol = String.format("%d", curValue);
@@ -546,15 +739,45 @@ class BlockSMAR {
 
     /* fix me */
     /*String symbolicMul(String symbol, long value) {
-        return symbol + "x" + String(value);
-    }*/
+      return symbol + "x" + String(value);
+      }*/
 
     /* fix me */
     /*String symbolicDiv(String symbol, long value) {
-        return symbol + "/" + String(value);
-    }*/
+      return symbol + "/" + String(value);
+      }*/
 
     int getRunCount() {
         return m_runs;
+    }
+}
+
+
+interface HardwareArch {
+    public String[] getRegisters();
+    public String getRegisterFullname(String reg);
+}
+
+class LArchX86 implements HardwareArch {
+    static final String [] m_Regs64 = {"RAX", "RBX", "RCX", "RDX", "RDI", "RSI", "RBP", "RSP", "R8", "R9", "R10", "R11", "R12", "R13", "R14", "R15"};
+    static final String [] m_Regs32 = {"EAX", "EBX", "ECX", "EDX", "EDI", "ESI", "EBP", "ESP", "R8D", "R9D", "R10D", "R11D", "R12D", "R13D", "R14D", "R15D"};
+    private Map<String, String> m_RegMap;
+
+    LArchX86 () {
+        m_RegMap = new HashMap<String, String>();
+
+        int idx = 0;
+        for (String r32: m_Regs32) {
+            m_RegMap.put(r32, m_Regs64[idx]);
+            idx++;
+        }
+    }
+
+    public String[] getRegisters() {
+        return m_Regs64;
+    }
+
+    public String getRegisterFullname(String reg) {
+        return m_RegMap.get(reg);
     }
 }
