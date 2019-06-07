@@ -59,7 +59,24 @@ public class SymbolicVSA extends GhidraScript {
 
             smar = new FunctionSMAR(program, listing, f, monitor);
             smar.doRecording();
+
+            Map<String, Set<String>> smart = smar.getMAARTable();
+            println(smart.toString());            
         }
+    }
+
+
+    boolean mergeVSATables() {
+        //for (BlockSMAR blk: m_blocks) {
+        //Map<String, Set<String>> table = blk.getVSATable();
+
+        /* merge two tables */
+        //}
+        return true;
+    }
+
+    boolean structAnalysis() {
+        return true;
     }
 }
 
@@ -80,13 +97,18 @@ class FunctionSMAR {
     private Map<Address, BlockSMAR> m_blocks;       // All blocks in this function
 
     /* for x86-64 */
-    static final String [] x86Regs = {"RAX", "RBX", "RCX", "RDX"};
+    static final String [] x86Regs = {"RAX", "RBX", "RCX", "RDX", "RDI", "RSI", "RBP", "RSP"};
 
     public FunctionSMAR(Program program, Listing listintDB, Function func, TaskMonitor monitor) {
         m_program = program;
         m_listDB = listintDB;
         m_function = func;
         m_monitor = monitor;
+
+        m_registers = new HashMap<String, String>();
+        m_memories = new HashMap<String, String>();
+        m_SMARTable = new HashMap<String, Set<String>>();
+        m_blocks = new HashMap<Address, BlockSMAR>();
 
         InitMachineStatus();
         InitSMARTable();
@@ -133,11 +155,11 @@ class FunctionSMAR {
             System.out.println("Failed to get basic blocks");
         }
 
-        /* Initialize control-flow graph */        
-        Set<BlockSMAR> nxtSMARblks = new HashSet<BlockSMAR>();
+        /* Initialize control-flow graph */
         try {
             for (BlockSMAR curSMARBlk: m_blocks.values()) {
                 /* find the next-blocks of current code-block */
+                Set<BlockSMAR> nxtSMARblks = new HashSet<BlockSMAR>();
                 CodeBlock curCodeBlk = curSMARBlk.getCodeBlock();
                 CodeBlockReferenceIterator di = curCodeBlk.getDestinations(m_monitor);
                 while (di.hasNext())  {
@@ -152,16 +174,13 @@ class FunctionSMAR {
 
                 /* set the m_next filed of current SMARTblock */
                 curSMARBlk.setNexts(nxtSMARblks);
-
-                /* start next cycle */
-                nxtSMARblks.clear();
-            }            
+            }
         }
         catch (Exception e) {
             /* fixe-me: ignore current function */
             System.out.println("Failed to contruct the CFG");
         }
-        
+
     }
 
     public boolean doRecording() {
@@ -172,6 +191,8 @@ class FunctionSMAR {
             CodeBlock firstBlk = blkModel.getCodeBlockAt(addr, m_monitor);
             BlockSMAR smarBlk = m_blocks.get(firstBlk.getFirstStartAddress());
 
+            System.out.println(247);
+            
             /* traverse all code-blocks recusivly */
             smarBlk.traversBlock(m_SMARTable, m_registers, m_memories);
         }
@@ -183,17 +204,8 @@ class FunctionSMAR {
         return true;
     }
 
-    boolean mergeVSATables() {
-        //for (BlockSMAR blk: m_blocks) {
-        //Map<String, Set<String>> table = blk.getVSATable();
-
-        /* merge two tables */
-        //}
-        return true;
-    }
-
-    boolean structAnalysis() {
-        return true;
+    Map<String, Set<String>> getMAARTable() {
+        return  m_SMARTable;
     }
 }
 
@@ -234,7 +246,8 @@ class BlockSMAR {
 
     /* traverse all code-blocks recusivly */
     public boolean traversBlock(Map<String, Set<String>> memory_access_table, HashMap<String, String> register_status, HashMap<String, String> memory_status) {
-
+        System.out.println(247);
+        /* Recording memory access conducted by current code block */
         doRecording(memory_access_table, register_status, memory_status);
 
         /* travers the next blocks */
@@ -283,6 +296,7 @@ class BlockSMAR {
             InstructionDB inst = (InstructionDB)iiter.next();
             String op = inst.getMnemonicString();
 
+            System.out.println(inst.toString());
             if(op.equals("push")) {
                 String oprd = inst.getDefaultOperandRepresentation(0);
                 int oprdty = inst.getOperandType(0);
