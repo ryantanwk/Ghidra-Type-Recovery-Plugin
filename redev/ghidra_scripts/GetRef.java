@@ -79,13 +79,17 @@ public class GetRef extends GhidraScript {
         FunctionIterator iter = listing.getFunctions(true);
 
         while (iter.hasNext() && !monitor.isCancelled()) {
-            Function f = iter.next();
+			Function f = iter.next();
+			String fname = f.getName();
 
             // Entry-point
             println("Function Entry: "+f.getEntryPoint());
 
             // Name
-            println("Function Name: "+f.getName());
+			println("Function Name: " + fname);
+			
+			if (!fname.equals("_ZN6Animal9printInfoEv"))
+				continue;
 
             //Parameters
             Parameter[] params = f.getParameters();
