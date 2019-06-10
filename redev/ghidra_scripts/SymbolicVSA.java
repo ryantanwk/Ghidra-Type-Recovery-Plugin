@@ -331,14 +331,51 @@ class BlockSMAR {
         if(op.equalsIgnoreCase("nop")) {
             return;
         }
-        else if(op.equalsIgnoreCase("leave")) {
 
+        if(op.equalsIgnoreCase("ret")) {
+            _record0ret(inst);
+        }
+
+        else if(op.equalsIgnoreCase("leave")) {
+            _record0leave(inst);
+        }
+
+        else {
             System.out.println("333: fix-me, other instructions");
         }
     }
 
-    private void _record1leave(InstructionDB inst) {
+    private void _record0ret(InstructionDB inst) {
+        /* pop rip */
+        String strValue;
+        /* Update RSP register status */
+        strValue = m_regStatus.get("RSP");
+        strValue = symbolicAdd(strValue, 8);
+        updateRegister("RSP", strValue);
+    }
 
+    private void _record0leave(InstructionDB inst) {
+        /* mov rsp, rbp; pop rbp */
+        String strValSP, strValBP;
+        String strValue;
+
+        /* mov rsp, rbp */
+        strValBP = m_regStatus.get("RBP");
+        updateRegister("RSP", strValBP);
+
+        /* pop rbp */
+        strValSP = m_regStatus.get("RSP");
+        strValue = m_memStatus.get(strValSP);
+        updateRegister("RBP", strValue);
+
+        /* Clean memory status */
+        strValSP = m_regStatus.get("RSP");
+        m_memStatus.remove(strValSP);
+
+        /* Update register RSP */
+        strValSP = m_regStatus.get("RSP");
+        strValue = symbolicAdd(strValSP, 8);
+        updateRegister("RSP", strValue);
     }
 
 
@@ -369,7 +406,7 @@ class BlockSMAR {
         }
         else if (op.equalsIgnoreCase("ret")) {
             /* retn 0x8 */
-            System.out.println("409: fix-me, retn");
+            _record1retn(inst);
         }
 
         else {
@@ -437,6 +474,16 @@ class BlockSMAR {
         updateRegister("RSP", strValue);
     }
 
+    private void _record1retn(InstructionDB inst) {
+        String strValue,  strValSP, oprd;
+
+        oprd = inst.getDefaultOperandRepresentation(0);
+
+        /* Update RSP register status */
+        strValSP = m_regStatus.get("RSP");
+        strValue = symbolicAdd(strValSP, Integer.decode(oprd) + 8);
+        updateRegister("RSP", strValue);
+    }
 
     void _doRecording2(InstructionDB inst) {
         System.out.println("414: " + inst.toString());
