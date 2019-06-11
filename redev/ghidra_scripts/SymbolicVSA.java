@@ -60,7 +60,7 @@ public class SymbolicVSA extends GhidraScript {
             long fentry = f.getEntryPoint().getOffset();
 
             // Entry-point
-            if (fentry != 0x0401e4a)
+            if (fentry != 0x004005a6)
                 continue;
 
             println("Function Entry: " + f.getEntryPoint());
@@ -113,10 +113,10 @@ class FunctionSMAR {
         m_function = func;
         m_monitor = monitor;
 
-        m_registers = new HashMap<String, String>();
-        m_memories = new HashMap<String, String>();
-        m_SMARTable = new HashMap<String, Set<String>>();
-        m_blocks = new HashMap<Address, BlockSMAR>();
+        m_registers = new HashMap<String, String>();        // CPU State : Registers
+        m_memories = new HashMap<String, String>();         // CPU State : Memory slot
+        m_SMARTable = new HashMap<String, Set<String>>();   // Symbolic Store
+        m_blocks = new HashMap<Address, BlockSMAR>();       // Basic Blocks of this function
 
         /* get all registers */
 
@@ -127,13 +127,8 @@ class FunctionSMAR {
     }
 
     private void InitMachineStatus() {
-        /* Set register values to symbols */
-        String [] genRegs = m_arch.getGenRegisters();
-        String [] segRegs = m_arch.getSegRegisters();
-        String[] allRegs = new String[genRegs.length + segRegs.length];
-
-        System.arraycopy(genRegs, 0, allRegs, 0, genRegs.length);
-        System.arraycopy(segRegs, 0, allRegs, genRegs.length, segRegs.length);
+        /* Set register values to symbolic initial values */
+        String[] allRegs = m_arch.getAllRegisters();
 
         for (String reg: allRegs) {
             m_registers.put(reg, "V" + reg);
@@ -147,13 +142,7 @@ class FunctionSMAR {
         }
 
         /* initialize m_SMART */
-        String [] genRegs = m_arch.getGenRegisters();
-        String [] segRegs = m_arch.getSegRegisters();
-        String[] allRegs = new String[genRegs.length + segRegs.length];
-
-        System.arraycopy(genRegs, 0, allRegs, 0, genRegs.length);
-        System.arraycopy(segRegs, 0, allRegs, genRegs.length, segRegs.length);
-        
+        String[] allRegs = m_arch.getAllRegisters();
 
         for (String reg: allRegs) {
             Set<String> vs = new HashSet<String>();
@@ -213,12 +202,16 @@ class FunctionSMAR {
         CodeBlockModel blkModel = new BasicBlockModel(m_program);
         Address addr = m_function.getEntryPoint();
 
+        // Should be a loop, if any symbolic state for any block has changed in the last round
         try {
             CodeBlock firstBlk = blkModel.getCodeBlockAt(addr, m_monitor);
+            // Obtain the wrapper object for GHIDRA's basic block
             BlockSMAR smarBlk = m_blocks.get(firstBlk.getFirstStartAddress());
 
-            /* traverse all code-blocks recusivly */
-            smarBlk.traversBlock(m_SMARTable, m_registers, m_memories);
+            //have_visited_bb_this_round [curr_bb] = False // For all basic blocks, set to false
+
+            /* traverse all code-blocks recusively in depth-first search (DFS) order */
+            smarBlk.traverseBlocksOnce(m_SMARTable, m_registers, m_memories);
         }
         catch (Exception e) {
             /* fixe-me: ignore current function */
@@ -243,7 +236,7 @@ class BlockSMAR {
     private CodeBlock m_block;
 
 
-    private Set<BlockSMAR> m_nexts;
+    private Set<BlockSMAR> m_nexts;         // CFG Representation for a given function, stored as a list of succ. for a block
     private int m_runs;
 
     private final OperandType OPRDTYPE;
@@ -277,14 +270,20 @@ class BlockSMAR {
         return m_nexts;
     }
 
-    /* traverse all code-blocks recusivly */
-    public boolean traversBlock(Map<String, Set<String>> memory_access_table, HashMap<String, String> register_status, HashMap<String, String> memory_status) {
-        /* Recording memory access conducted by current code block */
+    /* traverse all code-blocks recusively */
+    public boolean traverseBlocksOnce(Map<String, Set<String>> memory_access_table, HashMap<String, String> register_status, HashMap<String, String> memory_status) {
+        /* Recording the state of the symbolic memory store at the start of the current code block */
+        //is (new_memacc_table != existing_access_table) set_dirty (curr_bb);
         doRecording(memory_access_table, register_status, memory_status);
 
-        /* travers the next blocks */
+        //have_visited_bb_this_round [curr_bb] = True; //
+
+        /* travers the next blocks in DFS order */
         if (m_nexts.size() >= 1) {
             for (BlockSMAR nextBlk: m_nexts) {
+                //if (have_visited_bb_this_round) continue;
+
+                // To remove
                 boolean bLoopBack = (nextBlk.m_block.getFirstStartAddress().getOffset() < m_block.getFirstStartAddress().getOffset());
                 if (bLoopBack && nextBlk.getRunCount() > 10) {
                     continue;   // skip this one
@@ -302,7 +301,7 @@ class BlockSMAR {
                         mems = memory_status;
                     }
 
-                    nextBlk.traversBlock(memory_access_table, regs, mems);
+                    nextBlk.traverseBlocksOnce(memory_access_table, regs, mems);
                 }
             }
         }
@@ -531,6 +530,10 @@ class BlockSMAR {
         }
 
         else if (op.equalsIgnoreCase("mov")) {
+            _record2mov(inst);
+        }
+
+        else if (op.equalsIgnoreCase("movss")) {
             _record2mov(inst);
         }
 
@@ -841,9 +844,18 @@ class BlockSMAR {
                 return strAddress;
 
             }
+            else if (objs[0] instanceof GenericAddress) {
+                GenericAddress a = (GenericAddress)objs[0];
+
+                strAddress = String.valueOf(a.getOffset());
+                return strAddress;
+            }
+
             else {
                 /* Throw exception */
-                System.err.println("578: throw exception");
+                System.err.println("850: throw exception");
+                System.err.println("849: " + objs[0].getClass().getName());
+
                 return "";
             }
         }
@@ -860,18 +872,17 @@ class BlockSMAR {
         }
         else if (objs.length == 3) {
             /* fix-me */
-            System.out.println("591: fix-me");
+            System.out.println("875: fix-me");
             return "";
         }
 
         else {
             /* Throw exception */
-            System.out.println("600: throw exception");
+            System.out.println("880: throw exception");
 
             /* print some details */
             for (Object o: objs) {
-                System.out.println(o.getClass().getSimpleName());
-                System.out.println(o.toString());
+                System.out.println("885: " + o.getClass().getName());
             }
             return "";
         }
@@ -1055,10 +1066,10 @@ class BlockSMAR {
 
 
 interface HardwareArch {
-    public String[] getGenRegisters();
-    public String[] getSegRegisters();
+    public String[] getAllRegisters();
     public String getRegisterFullname(String reg);
 }
+
 
 class LArchX86 implements HardwareArch {
     static final String [] m_Regs64 = {"RAX", "RBX", "RCX", "RDX", "RDI", "RSI", "RBP", "RSP", "R8", "R9", "R10", "R11", "R12", "R13", "R14", "R15"};
@@ -1067,16 +1078,23 @@ class LArchX86 implements HardwareArch {
     static final String [] m_Regs8h = {"AH", "BH", "CH", "DH"};
     static final String [] m_Regs8l = {"AL", "BL", "CL", "DL"};
     static final String [] m_RegSeg = {"FS", "GS"};
+    static final String [] m_RegXmm = {"XMM0", "XMM1", "XMM2", "XMM3", "XMM4", "XMM5", "XMM6", "XMM7"};
 
     private Map<String, String> m_RegMap;
+    private String[] m_AllRegs;
+
 
     LArchX86 () {
         m_RegMap = new HashMap<String, String>();
 
         int idx = 0;
-        
+
         for (idx = 0; idx < m_RegSeg.length; idx++) {
             m_RegMap.put(m_RegSeg[idx], m_RegSeg[idx]);
+        }
+
+        for (idx = 0; idx < m_RegXmm.length; idx++) {
+            m_RegMap.put(m_RegXmm[idx], m_RegXmm[idx]);
         }
 
         for (idx = 0; idx < m_Regs64.length; idx++) {
@@ -1100,13 +1118,21 @@ class LArchX86 implements HardwareArch {
         }
     }
 
-    public String[] getGenRegisters() {
-        return m_Regs64;
+    /* Get all kinds of registers of this platform */
+    public String[] getAllRegisters() {
+
+        if (m_AllRegs == null) {
+            String[] allRegs = new String[m_RegSeg.length + m_RegXmm.length + m_Regs64.length];
+
+            System.arraycopy(m_RegSeg, 0, allRegs, 0, m_RegSeg.length);
+            System.arraycopy(m_RegXmm, 0, allRegs, m_RegSeg.length, m_RegXmm.length);
+            System.arraycopy(m_Regs64, 0, allRegs, m_RegSeg.length+m_RegXmm.length, m_Regs64.length);
+            m_AllRegs = allRegs;
+        }
+
+        return m_AllRegs;
     }
 
-    public String[] getSegRegisters() {
-        return m_RegSeg;
-    }
 
     public String getRegisterFullname(String reg) {
         return m_RegMap.get(reg);
