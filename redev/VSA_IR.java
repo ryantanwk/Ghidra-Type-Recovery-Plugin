@@ -23,6 +23,7 @@ import java.util.*; // Map & List
 
 import java.lang.Math;
 import java.lang.Object;
+import java.math.BigInteger;
 import java.text.DecimalFormat;
 
 import ghidra.program.model.listing.*;
@@ -30,6 +31,7 @@ import ghidra.program.model.block.*; //CodeBlock && CodeBlockImpl
 import ghidra.program.model.address.*;
 import ghidra.program.model.lang.OperandType;
 import ghidra.program.model.lang.Register;
+import ghidra.program.model.lang.Language;
 import ghidra.program.model.scalar.Scalar;
 
 import ghidra.program.model.mem.*;
@@ -49,6 +51,7 @@ import ghidra.app.script.GhidraScript;
 public class VSA_IR extends GhidraScript {
     private Program program;
     private Listing listing;
+    private Language language;
 
     /**
      * Calculate the address space of code segments
@@ -116,6 +119,7 @@ public class VSA_IR extends GhidraScript {
     public void run() {
         program = state.getCurrentProgram();
         listing = program.getListing();
+        language = program.getLanguage();
 
         VSADataTypeManager dtMgr = VSADataTypeManager.getInstance(program);
 
@@ -1338,6 +1342,7 @@ class IRInterpreter extends Interpreter {
     //private static OperandType m_OPRDTYPE; // Use for testing opranad types
     private static SymbolicCalculator m_SymCalc; // Used for do symbolic calculation
     private static Program program;
+    private static Language language;
     
 
     private Map<Long, Map<String, Set<String>>> m_SMART; // Memory access recording
@@ -1346,10 +1351,9 @@ class IRInterpreter extends Interpreter {
     private static IRInterpreter m_singleton = null;
 
     private IRInterpreter(Program program) {
-        //m_CPU = X86Processor.getProcessor();
         m_SymCalc = SymbolicCalculator.getCalculator();
-        //m_OPRDTYPE = new OperandType();
         this.program = program;
+        this.language = program.getLanguage();
     }
 
     public static IRInterpreter getInterpreter(Program program) {
@@ -1381,8 +1385,6 @@ class IRInterpreter extends Interpreter {
         try { // all pcode instructions only take 1 OR 2 inputs (execept CALL, CALLIND which are currently not handled)
             if (nOprand == 1) {
                 _doRecording1(pcode,inst);
-            //} else if (nOprand == 1) {
-            //    _doRecording1(inst);
             } else if (nOprand == 2) {
                 _doRecording2(pcode,inst);
             //} else if (nOprand == 3) {
@@ -1410,19 +1412,19 @@ class IRInterpreter extends Interpreter {
         // System.out.println("340: " + inst.toString());
         String op = pcode.getMnemonic();
         
-        if (op.equalsIgnoreCase("COPY")) {return;}
+        if (op.equalsIgnoreCase("COPY")) {return;}// do
         
-        else if (op.equalsIgnoreCase("BRANCH")) {return;}
+        else if (op.equalsIgnoreCase("BRANCH")) {return;}// do
         	
         else if (op.equalsIgnoreCase("BRANCHIND")) {return;}
         	
-        else if (op.equalsIgnoreCase("INT_ZEXT")) {return;}
+        else if (op.equalsIgnoreCase("INT_ZEXT")) {return;} // do
         
         else if (op.equalsIgnoreCase("INT_SEXT")) {return;}
         
         else if (op.equalsIgnoreCase("INT_2COMP")) {return;}
         		
-        else if (op.equalsIgnoreCase("INT_NEGATE")) {return;}
+        else if (op.equalsIgnoreCase("INT_NEGATE")) {return;}// do
         			
         else if (op.equalsIgnoreCase("BOOL_NEGATE")) {return;}
         				
@@ -1449,89 +1451,472 @@ class IRInterpreter extends Interpreter {
         else {
             throw new UnspportInstruction(pcode);
         }
+        //return;
     }
+    
+    
+    
     private void _doRecording2(PcodeOp pcode, Instruction inst) {
-        // System.out.println("414: " + inst.toString());
         String op = pcode.getMnemonic();
-
-        if (op.equalsIgnoreCase("LOAD")) {}
-        else if (op.equalsIgnoreCase("STORE")) {}
-        else if (op.equalsIgnoreCase("PIECE")) {}
-        else if (op.equalsIgnoreCase("SUBPIECE")) {}
-        else if (op.equalsIgnoreCase("INT_EQUAL")) {}
-        else if (op.equalsIgnoreCase("INT_NOTEQUAL")) {}
-        else if (op.equalsIgnoreCase("INT_LESS")) {}
-        else if (op.equalsIgnoreCase("INT_SLESS")) {}
-        else if (op.equalsIgnoreCase("INT_LESSEQUAL")) {}
-        else if (op.equalsIgnoreCase("INT_SLESSEQUAL")) {}
-        else if (op.equalsIgnoreCase("INT_ADD")) {_record2addsub(pcode,'+',inst);}
+        
+        // FOR TESTING
+        if (op.equalsIgnoreCase("INT_ADD")) {_record2addsub(pcode,'+',inst);}
         else if (op.equalsIgnoreCase("INT_SUB")) {_record2addsub(pcode,'-',inst);}
-        else if (op.equalsIgnoreCase("INT_CARRY")) {}
-        else if (op.equalsIgnoreCase("INT_SCARRY")) {}
-        else if (op.equalsIgnoreCase("INT_SBORROW")) {}
-        else if (op.equalsIgnoreCase("INT_XOR")) {}
-        else if (op.equalsIgnoreCase("INT_AND")) {}
-        else if (op.equalsIgnoreCase("INT_OR")) {}
-        else if (op.equalsIgnoreCase("INT_LEFT")) {}
-        else if (op.equalsIgnoreCase("INT_RIGHT")) {}
-        else if (op.equalsIgnoreCase("INT_SRIGHT")) {}
-        else if (op.equalsIgnoreCase("INT_MULT")) {}
-        else if (op.equalsIgnoreCase("INT_DIV")) {}
-        else if (op.equalsIgnoreCase("INT_REM")) {}
-        else if (op.equalsIgnoreCase("INT_SDIV")) {}
-        else if (op.equalsIgnoreCase("INT_SREM")) {}
-        else if (op.equalsIgnoreCase("BOOL_XOR")) {}
-        else if (op.equalsIgnoreCase("BOOL_AND")) {}
-        else if (op.equalsIgnoreCase("BOOL_OR")) {}
-        else if (op.equalsIgnoreCase("FLOAT_EQUAL")) {}
-        else if (op.equalsIgnoreCase("FLOAT_NOTEQUAL")) {}
-        else if (op.equalsIgnoreCase("FLOAT_LESS")) {}
-        else if (op.equalsIgnoreCase("FLOAT_LESSEQUAL")) {}
-        else if (op.equalsIgnoreCase("FLOAT_ADD")) {}
-        else if (op.equalsIgnoreCase("FLOAT_SUB")) {}
-        else if (op.equalsIgnoreCase("FLOAT_MULT")) {}
-        else if (op.equalsIgnoreCase("FLOAT_DIV")) {}
+        else if (op.equalsIgnoreCase("INT_MULT")) {_recordintmult(pcode,inst);}// do
+        else if (op.equalsIgnoreCase("INT_LEFT")) {_recordbinaryshift(pcode,'u','l',inst);}
+        else if (op.equalsIgnoreCase("INT_RIGHT")) {_recordbinaryshift(pcode,'u','r',inst);}// do
+        else if (op.equalsIgnoreCase("INT_SRIGHT")) {_recordbinaryshift(pcode,'s','r',inst);}// do
+        else if (op.equalsIgnoreCase("INT_XOR")) {_recordintbinaryop(pcode,'x',inst);}// do
+        else if (op.equalsIgnoreCase("INT_AND")) {_recordintbinaryop(pcode,'n',inst);}// do
+        else if (op.equalsIgnoreCase("INT_OR")) {_recordintbinaryop(pcode,'o',inst);}// do
+        /*
+        else if (op.equalsIgnoreCase("STORE")) {_recordstore(pcode,inst);}// do
+        else if (op.equalsIgnoreCase("LOAD")) {return;} // do
+        else if (op.equalsIgnoreCase("PIECE")) {_recordpiece(pcode,inst);}
+        else if (op.equalsIgnoreCase("SUBPIECE")) {_recordsubpiece(pcode,inst);}
+        else if (op.equalsIgnoreCase("INT_EQUAL")) {_recordintequal(pcode,inst);}// do
+        else if (op.equalsIgnoreCase("INT_NOTEQUAL")) {_recordintnotequal(pcode,inst);}// do
+        else if (op.equalsIgnoreCase("INT_LESS")) {_recordintless(pcode,'u',inst);}// do
+        else if (op.equalsIgnoreCase("INT_SLESS")) {_recordintless(pcode,'s',inst);} // do
+        else if (op.equalsIgnoreCase("INT_LESSEQUAL")) {_recordintlessequal(pcode,'u',inst);}
+        else if (op.equalsIgnoreCase("INT_SLESSEQUAL")) {_recordintlessequak(pcode,'s',inst);}
+        else if (op.equalsIgnoreCase("INT_CARRY")) {_recordcarry(pcode,'u',inst);}// do
+        else if (op.equalsIgnoreCase("INT_SCARRY")) {_recordcarry(pcode,'s',inst);}// do
+        else if (op.equalsIgnoreCase("INT_SBORROW")) {_recordsborrow(pcode,inst);}// do
+        else if (op.equalsIgnoreCase("INT_DIV")) {_recordintdiv(pcode,'u',inst);}
+        else if (op.equalsIgnoreCase("INT_REM")) {_recordintrem(pcode,'u',inst);}
+        else if (op.equalsIgnoreCase("INT_SDIV")) {_recordintdiv(pcode,'s',inst);}
+        else if (op.equalsIgnoreCase("INT_SREM")) {_recordintrem(pcode,'s',inst);}
+        else if (op.equalsIgnoreCase("BOOL_XOR")) {_recordbolbinaryop(pcode,'x',inst);}
+        else if (op.equalsIgnoreCase("BOOL_AND")) {_recordbolbinaryop(pcode,'n',inst);}
+        else if (op.equalsIgnoreCase("BOOL_OR")) {_recordbolbinaryop(pcode,'o',inst);}// do
+        else if (op.equalsIgnoreCase("FLOAT_EQUAL")) {_recordfloatinequality(pcode,'=',inst);}
+        else if (op.equalsIgnoreCase("FLOAT_NOTEQUAL")) {_recordfloatinequality(pcode,'!=',inst);}
+        else if (op.equalsIgnoreCase("FLOAT_LESS")) {_recordfloatinequality(pcode,'<',inst);}
+        else if (op.equalsIgnoreCase("FLOAT_LESSEQUAL")) {_recordfloatinequality(pcode,'<=',inst);}
+        else if (op.equalsIgnoreCase("FLOAT_ADD")) {_recordfloatarith(pcode,'+',inst);}
+        else if (op.equalsIgnoreCase("FLOAT_SUB")) {_recordfloatarith(pcode,'-',inst);}
+        else if (op.equalsIgnoreCase("FLOAT_MULT")) {_recordfloatarith(pcode,'*',inst);}
+        else if (op.equalsIgnoreCase("FLOAT_DIV")) {_recordfloatarith(pcode,'/',inst);}
         else if (op.equalsIgnoreCase("RETURN")) {} // not implemented
         else {throw new UnspportInstruction(pcode);}
-        
+        */
         return;
     }
     
+    
     private void _record2addsub(PcodeOp pcode, char op, Instruction inst) {
-        Varnode varnode0 = pcode.getInput(0);
-        Varnode varnode1 = pcode.getInput(0);
-        String strVal0, strVal1, strRes;
+    	Varnode varnode0 = pcode.getInput(0);
+		Varnode varnode1 = pcode.getInput(1);
+		String strVal0, strVal1, strRes;
+		Varnode resVarnode = pcode.getOutput();
+		
+    	if (varnode0.isConstant()) { // first input is constant 
+    		strVal0 = varnode2longstring(varnode0);
+    		
+    		if (varnode1.isConstant()) { strVal1 = varnode2longstring(varnode1); } // second input is constant
+    			
+    		else if (varnode1.isRegister()) { strVal1 = getMemoryValue(varnode1.toString(language)); } // second input is register
+    		
+    		else { strVal1 = getMemoryValue(getStringAddr(varnode1)); } // second input is a variable
+    	}
+    	
+    	else if (varnode0.isRegister()) { // first input is register 
+    		strVal0 = getMemoryValue(varnode0.toString(language));
+    		
+    		if (varnode1.isConstant()) { strVal1 = varnode2longstring(varnode1); } // second input is constant
+    			
+    		else if (varnode1.isRegister()) { strVal1 = getMemoryValue(varnode1.toString(language)); } // second input is register
+    		
+    		else { strVal1 = getMemoryValue(getStringAddr(varnode1)); } // second input is a variable
+    	}
+    	else { // first input is var
+    		strVal0 = getMemoryValue(getStringAddr(varnode0));
+    		
+    		if (varnode1.isConstant()) { strVal1 = varnode2longstring(varnode1); } // second input is constant
+    			
+    		else if (varnode1.isRegister()) { strVal1 = getMemoryValue(varnode1.toString(language)); } // second input is register
+    		
+    		else { strVal1 = getMemoryValue(getStringAddr(varnode1)); } // second input is a variable
+    	}
 
-            /* The first operand is in memory */
-            /* Ghidra bug: sub [RAX],RDX -> _, ADDR|REG */
+        if (op == '+') { strRes = m_SymCalc.symbolicAdd(strVal0, strVal1); }
+        else { strRes = m_SymCalc.symbolicSub(strVal0, strVal1); }
+
+        
+        updateMemoryWriteAccess(inst.getAddress(), getStringAddr(resVarnode), strRes);
+    }
+    
+    //input0 	(special) 	Constant ID of space to store into.
+    //input1 		Varnode containing pointer offset of destination.
+    //input2 		Varnode containing data to be stored.
+    /*private void _recordstore(PcodeOp pcode,Instruction inst) {
+    	Varnode varnode1 = pcode.getInput(1);
+		Varnode varnode2 = pcode.getInput(2);
+		String strVal1, strVal2, strRes;
+		Varnode resVarnode = pcode.getOutput();
+		
+    	if (varnode0.isConstant()) { // first input is constant 
+    		strVal0 = varnode2longstring(varnode0);
+    		if (varnode1.isConstant()) { strVal1 = varnode2longstring(varnode1); } // second input is constant
+    		else if (varnode1.isRegister()) { strVal1 = getMemoryValue(varnode1.toString(language)); } // second input is register
+    		else { strVal1 = getMemoryValue(getStringAddr(varnode1)); } // second input is a variable
+    	}
+    	else 
+    		printf("Error!");
+    	
+    	strRes = m_SymCalc.symbolicMul(strVal0, strVal1);
+        updateMemoryWriteAccess(inst.getAddress(), getStringAddr(resVarnode), strRes);
+    }
+    
+    // 1st input: address space ; 2nd input: offset of source from address space
+    private void _recordload(PcodeOp pcode, Instruction inst) {
+        Varnode varnode0 = pcode.getInput(0);
+        Varnode varnode1 = pcode.getInput(1);
+        String strVal0, strVal1, strRes;
+        Address res = pcode.getOutput().getAddress();
+
             String strAddr0 = _calcMemAddress(varnode0);
-            /* fetch the value from the memory elememt */
             strVal0 = getMemoryValue(strAddr0);
             
             String strAddr1 = _calcMemAddress(varnode1);
             strVal1 = getMemoryValue(strAddr1);
+            
+            // OPERATION TO-DO
+            // "special" input?
+            
+            updateMemoryWriteAccess(inst.getAddress(), res.toString(), strRes);
+    }
+    // input0: target address space's constant ID, input1: target's offset into addr space, input2: data to be stored
+    // how to exract dst address space and offset?
+    private void _recordstore(PcodeOp pcode, Instruction inst) {
+        Varnode varnode0 = pcode.getInput(0);
+        Varnode varnode1 = pcode.getInput(1);
+        Varnode varnode2 = pcode.getInput(2);
+        String strVal0, strVal1, strVal2, strRes;
 
-            if (op == '+')
-                strRes = m_SymCalc.symbolicAdd(strVal0, strVal1);
-            else if (op == '-')
-                strRes = m_SymCalc.symbolicSub(strVal0, strVal1);
-            else
-                strRes = strVal0;
+            String strAddr0 = _calcMemAddress(varnode0);
+            strVal0 = getMemoryValue(strAddr0);
+            
+            String strAddr1 = _calcMemAddress(varnode1);
+            strVal1 = getMemoryValue(strAddr1);
+            
+            String strAddr2 = _calcMemAddress(varnode2);
+            // OPERATION TO-DO
+            // "special" input?
+            
+            updateMemoryWriteAccess(inst.getAddress(), strAddr2, strRes);
+    }
+    
+    private void _recordpiece(PcodeOp pcode, Instruction inst) {
+        Varnode varnode0 = pcode.getInput(0);
+        Varnode varnode1 = pcode.getInput(1);
+        String strVal0, strVal1, strRes;
 
-            /* update memory write access */
+            String strAddr0 = _calcMemAddress(varnode0);
+            strVal0 = getMemoryValue(strAddr0);
+            
+            String strAddr1 = _calcMemAddress(varnode1);
+            strVal1 = getMemoryValue(strAddr1);
+            
+            // OPERATION TO-DO
+            
             updateMemoryWriteAccess(inst.getAddress(), strAddr0, strRes);
     }
+    
+    private void _recordsubpiece(PcodeOp pcode, Instruction inst) {
+        Varnode varnode0 = pcode.getInput(0);
+        Varnode varnode1 = pcode.getInput(1);
+        String strVal0, strVal1, strRes;
+
+            String strAddr0 = _calcMemAddress(varnode0);
+            strVal0 = getMemoryValue(strAddr0);
+            
+            String strAddr1 = _calcMemAddress(varnode1);
+            strVal1 = getMemoryValue(strAddr1);
+            
+            // OPERATION TO-DO
+            
+            updateMemoryWriteAccess(inst.getAddress(), strAddr0, strRes);
+    }
+    
+    private void _recordintequal(PcodeOp pcode, Instruction inst) {
+        Varnode varnode0 = pcode.getInput(0);
+        Varnode varnode1 = pcode.getInput(1);
+        String strVal0, strVal1, strRes;
+
+            String strAddr0 = _calcMemAddress(varnode0);
+            strVal0 = getMemoryValue(strAddr0);
+            
+            String strAddr1 = _calcMemAddress(varnode1);
+            strVal1 = getMemoryValue(strAddr1);
+            
+            // OPERATION TO-DO
+            
+            updateMemoryWriteAccess(inst.getAddress(), strAddr0, strRes);
+    }
+    
+    private void _recordintnotequal(PcodeOp pcode, char op, Instruction inst) {
+        Varnode varnode0 = pcode.getInput(0);
+        Varnode varnode1 = pcode.getInput(1);
+        String strVal0, strVal1, strRes;
+
+            String strAddr0 = _calcMemAddress(varnode0);
+            strVal0 = getMemoryValue(strAddr0);
+            
+            String strAddr1 = _calcMemAddress(varnode1);
+            strVal1 = getMemoryValue(strAddr1);
+            
+            // OPERATION TO-DO
+            
+            updateMemoryWriteAccess(inst.getAddress(), strAddr0, strRes);
+    }
+    
+    // 'format' identifies inputs as signed or unsigned
+    private void _recordintless(PcodeOp pcode, char format, Instruction inst) {
+        Varnode varnode0 = pcode.getInput(0);
+        Varnode varnode1 = pcode.getInput(1);
+        String strVal0, strVal1, strRes;
+
+            String strAddr0 = _calcMemAddress(varnode0);
+            strVal0 = getMemoryValue(strAddr0);
+            
+            String strAddr1 = _calcMemAddress(varnode1);
+            strVal1 = getMemoryValue(strAddr1);
+            
+            updateMemoryWriteAccess(inst.getAddress(), strAddr0, strRes);
+    }
+    
+ // 'format' identifies inputs as signed or unsigned
+    private void _recordintlessequal(PcodeOp pcode, char format, Instruction inst) {
+        Varnode varnode0 = pcode.getInput(0);
+        Varnode varnode1 = pcode.getInput(1);
+        String strVal0, strVal1, strRes;
+
+            String strAddr0 = _calcMemAddress(varnode0);
+            strVal0 = getMemoryValue(strAddr0);
+            
+            String strAddr1 = _calcMemAddress(varnode1);
+            strVal1 = getMemoryValue(strAddr1);
+            
+            // OPERATION TO-DO
+            
+            updateMemoryWriteAccess(inst.getAddress(), strAddr0, strRes);
+    }
+    
+    // 'format' identifies inputs as signed or unsigned
+    private void _recordintcarry(PcodeOp pcode, char format, Instruction inst) {
+        Varnode varnode0 = pcode.getInput(0);
+        Varnode varnode1 = pcode.getInput(1);
+        String strVal0, strVal1, strRes;
+
+            String strAddr0 = _calcMemAddress(varnode0);
+            strVal0 = getMemoryValue(strAddr0);
+            
+            String strAddr1 = _calcMemAddress(varnode1);
+            strVal1 = getMemoryValue(strAddr1);
+            
+            // OPERATION TO-DO
+            
+            updateMemoryWriteAccess(inst.getAddress(), strAddr0, strRes);
+    }
+    
+    private void _recordsborrow(PcodeOp pcode, Instruction inst) {
+        Varnode varnode0 = pcode.getInput(0);
+        Varnode varnode1 = pcode.getInput(1);
+        String strVal0, strVal1, strRes;
+
+            String strAddr0 = _calcMemAddress(varnode0);
+            strVal0 = getMemoryValue(strAddr0);
+            
+            String strAddr1 = _calcMemAddress(varnode1);
+            strVal1 = getMemoryValue(strAddr1);
+            
+            // OPERATION TO-DO
+            
+            updateMemoryWriteAccess(inst.getAddress(), strAddr0, strRes);
+    }
+        */
+    // 'x' - XOR ; 'n' - AND ; 'o' - OR
+    private void _recordintbinaryop(PcodeOp pcode, char op, Instruction inst) {
+    	Varnode varnode0 = pcode.getInput(0);
+		Varnode varnode1 = pcode.getInput(1);
+		String strRes;
+		Varnode resVarnode = pcode.getOutput();
+		BigInteger res;
+		BigInteger value0 = new BigInteger(Long.decode(varnode0.toString(language)).toString());
+		BigInteger value1 = new BigInteger(Long.decode(varnode1.toString(language)).toString());
+		
+		if(op == 'x') {res = value0.xor(value1);}
+		else if (op == 'n') {res = value0.and(value1);}
+		else {res = value0.or(value1);}
+		
+		strRes = res.toString(10);
+		
+        updateMemoryWriteAccess(inst.getAddress(), getStringAddr(resVarnode), strRes);
+    }
+
+    // dir: 'r' - right ; 'l' - left; input0 is the varnode being shift, input1 is the shift amount
+    private void _recordbinaryshift(PcodeOp pcode, char format, char dir, Instruction inst) {
+    	Varnode varnode0 = pcode.getInput(0);
+		Varnode varnode1 = pcode.getInput(1);
+		String strVal0, strVal1, strRes;
+		Varnode resVarnode = pcode.getOutput();
+		
+    	if (varnode0.isConstant()) { // first input is constant 
+    		strVal0 = varnode2longstring(varnode0);
+    		if (varnode1.isConstant()) { strVal1 = varnode2longstring(varnode1); } // second input is constant
+    		else if (varnode1.isRegister()) { strVal1 = getMemoryValue(varnode1.toString(language)); } // second input is register
+    		else { strVal1 = getMemoryValue(getStringAddr(varnode1)); } // second input is a variable
+    	}
+    	else if (varnode0.isRegister()) { // first input is register 
+    		strVal0 = getMemoryValue(varnode0.toString(language));
+    		if (varnode1.isConstant()) { strVal1 = varnode2longstring(varnode1); } // second input is constant
+    		else if (varnode1.isRegister()) { strVal1 = getMemoryValue(varnode1.toString(language)); } // second input is register
+    		else { strVal1 = getMemoryValue(getStringAddr(varnode1)); } // second input is a variable
+    	}
+    	else { // first input is var
+    		strVal0 = getMemoryValue(getStringAddr(varnode0));
+    		if (varnode1.isConstant()) { strVal1 = varnode2longstring(varnode1); } // second input is constant	
+    		else if (varnode1.isRegister()) { strVal1 = getMemoryValue(varnode1.toString(language)); } // second input is register
+    		else { strVal1 = getMemoryValue(getStringAddr(varnode1)); } // second input is a variable
+    	}
+    	
+    	if (format == 's') { // format value of first input if its a signed value
+    		if (strVal0.endsWith("0")) {
+    			String neg = "-";
+    			strVal0 = neg.concat(strVal0);
+    		}
+    		strVal0 = strVal0.substring(0,strVal0.length()-2);
+    	}
+
+    	if (dir == 'l') { strRes = m_SymCalc.symbolicMul(strVal0, Long.decode(strVal1) * 2); }
+    	else { strRes = m_SymCalc.symbolicDiv(strVal0, Long.decode(strVal1) * 2); }
+        
+        updateMemoryWriteAccess(inst.getAddress(), getStringAddr(resVarnode), strRes);
+    }
+    
+    private void _recordintmult(PcodeOp pcode, Instruction inst) {
+    	Varnode varnode0 = pcode.getInput(0);
+		Varnode varnode1 = pcode.getInput(1);
+		String strVal0, strVal1, strRes;
+		Varnode resVarnode = pcode.getOutput();
+		
+    	if (varnode0.isConstant()) { // first input is constant 
+    		strVal0 = varnode2longstring(varnode0);
+    		if (varnode1.isConstant()) { strVal1 = varnode2longstring(varnode1); } // second input is constant	
+    		else if (varnode1.isRegister()) { strVal1 = getMemoryValue(varnode1.toString(language)); } // second input is register
+    		else { strVal1 = getMemoryValue(getStringAddr(varnode1)); } // second input is a variable
+    	}
+    	else if (varnode0.isRegister()) { // first input is register 
+    		strVal0 = getMemoryValue(varnode0.toString(language));
+    		if (varnode1.isConstant()) { strVal1 = varnode2longstring(varnode1); } // second input is constant	
+    		else if (varnode1.isRegister()) { strVal1 = getMemoryValue(varnode1.toString(language)); } // second input is register
+    		else { strVal1 = getMemoryValue(getStringAddr(varnode1)); } // second input is a variable
+    	}
+    	else { // first input is var
+    		strVal0 = getMemoryValue(getStringAddr(varnode0));
+    		if (varnode1.isConstant()) { strVal1 = varnode2longstring(varnode1); } // second input is constant	
+    		else if (varnode1.isRegister()) { strVal1 = getMemoryValue(varnode1.toString(language)); } // second input is register
+    		else { strVal1 = getMemoryValue(getStringAddr(varnode1)); } // second input is a variable
+    	}
+
+        strRes = m_SymCalc.symbolicMul(strVal0, strVal1);
+        updateMemoryWriteAccess(inst.getAddress(), getStringAddr(resVarnode), strRes);
+    }
+    /*
+    private void _recordintdiv(PcodeOp pcode, char format, Instruction inst) {
+        Varnode varnode0 = pcode.getInput(0);
+        Varnode varnode1 = pcode.getInput(1);
+        String strVal0, strVal1, strRes;
+
+            String strAddr0 = _calcMemAddress(varnode0);
+            strVal0 = getMemoryValue(strAddr0);
+            
+            String strAddr1 = _calcMemAddress(varnode1);
+            strVal1 = getMemoryValue(strAddr1);
+            
+            // OPERATION TO-DO
+            strRes = m_SymCalc.symbolicMul(strVal0, strVal1);
+            
+            updateMemoryWriteAccess(inst.getAddress(), strAddr0, strRes);
+    }
+    
+    private void _recordintrem(PcodeOp pcode, char format, Instruction inst) {
+        Varnode varnode0 = pcode.getInput(0);
+        Varnode varnode1 = pcode.getInput(1);
+        String strVal0, strVal1, strRes;
+
+            String strAddr0 = _calcMemAddress(varnode0);
+            strVal0 = getMemoryValue(strAddr0);
+            
+            String strAddr1 = _calcMemAddress(varnode1);
+            strVal1 = getMemoryValue(strAddr1);
+            
+            // OPERATION TO-DO
+            
+            updateMemoryWriteAccess(inst.getAddress(), strAddr0, strRes);
+    }
+    
+ // 'x' - XOR ; 'n' - AND ; 'o' - OR
+    private void _recordbolbinaryop(PcodeOp pcode, char op, Instruction inst) {
+        Varnode varnode0 = pcode.getInput(0);
+        Varnode varnode1 = pcode.getInput(1);
+        String strVal0, strVal1, strRes;
+
+            String strAddr0 = _calcMemAddress(varnode0);
+            strVal0 = getMemoryValue(strAddr0);
+            
+            String strAddr1 = _calcMemAddress(varnode1);
+            strVal1 = getMemoryValue(strAddr1);
+            
+            // OPERATION TO-DO
+            
+            updateMemoryWriteAccess(inst.getAddress(), strAddr0, strRes);
+    }
+    
+    private void _recordfloatinequality(PcodeOp pcode, char inequality, Instruction inst) {
+        Varnode varnode0 = pcode.getInput(0);
+        Varnode varnode1 = pcode.getInput(1);
+        String strVal0, strVal1, strRes;
+
+            String strAddr0 = _calcMemAddress(varnode0);
+            strVal0 = getMemoryValue(strAddr0);
+            
+            String strAddr1 = _calcMemAddress(varnode1);
+            strVal1 = getMemoryValue(strAddr1);
+            
+            // OPERATION TO-DO
+            
+            updateMemoryWriteAccess(inst.getAddress(), strAddr0, strRes);
+    }
+    
+    private void _recordfloatarith(PcodeOp pcode, char op, Instruction inst) {
+        Varnode varnode0 = pcode.getInput(0);
+        Varnode varnode1 = pcode.getInput(1);
+        String strVal0, strVal1, strRes;
+
+            String strAddr0 = _calcMemAddress(varnode0);
+            strVal0 = getMemoryValue(strAddr0);
+            
+            String strAddr1 = _calcMemAddress(varnode1);
+            strVal1 = getMemoryValue(strAddr1);
+            
+            // OPERATION TO-DO
+            
+            updateMemoryWriteAccess(inst.getAddress(), strAddr0, strRes);
+    }*/
 
     private String _calcMemAddress(Varnode varnode) { //VAR UNIQUELY IDENTIFIED BY OFFSET ONLY?
         return String.valueOf(varnode.getOffset());
     }
 
-    /* override me if needs */
+    // override me if needs
     private String getMemoryValue(String address) {
         return m_MachState.getMemValue(address);
     }
 
-    /*private boolean updateRegisterWriteAccess(long inst_address, String reg, String value) {
+    private boolean updateRegisterWriteAccess(long inst_address, String reg, String value) {
         Map<String, Set<String>> tmpMap;
         Set<String> tmpSet;
 
@@ -1542,7 +1927,7 @@ class IRInterpreter extends Interpreter {
             m_SMART.put(inst_address, tmpMap);
         }
 
-        reg = m_CPU.getRegisterFullName(reg);
+        //reg = m_CPU.getRegisterFullName(reg);
         tmpSet = tmpMap.get(reg);
         if (tmpSet == null) {
             tmpSet = new HashSet<>();
@@ -1568,7 +1953,7 @@ class IRInterpreter extends Interpreter {
 
     private boolean updateRegisterWriteAccess(Address instruction_address, String reg, String value) {
         return updateRegisterWriteAccess(instruction_address.getOffset(), reg, value);
-    }*/
+    }
 
     private boolean updateMemoryWriteAccess(long inst_address, String address, String value) {
         Map<String, Set<String>> tmpMap;
@@ -1631,6 +2016,15 @@ class IRInterpreter extends Interpreter {
 
     private boolean updateMemoryReadAccess(Address inst_address, String memory_address) {
         return updateMemoryReadAccess(inst_address.getOffset(), memory_address);
+    }
+    
+    private String varnode2longstring (Varnode varnode) {
+    	long temp = Long.decode(varnode.toString(language));
+    	return Long.toString(temp);
+    }
+    
+    private String getStringAddr(Varnode varnode) {
+    	return String.valueOf(varnode.getAddress().hashCode());
     }
 }
 
