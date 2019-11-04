@@ -1412,7 +1412,7 @@ class IRInterpreter extends Interpreter {
         // System.out.println("340: " + inst.toString());
         String op = pcode.getMnemonic();
         
-        if (op.equalsIgnoreCase("COPY")) {return;}// do
+        if (op.equalsIgnoreCase("COPY")) {_recordcopy(pcode,inst);}// do
         
         else if (op.equalsIgnoreCase("BRANCH")) {return;}// do
         	
@@ -1454,7 +1454,17 @@ class IRInterpreter extends Interpreter {
         //return;
     }
     
-    
+    private void _recordcopy(PcodeOp pcode, Instruction inst) {
+    	Varnode varnode0 = pcode.getInput(0);
+    	Varnode resVarnode = pcode.getOutput();
+    	String strRes;
+    	
+    	if (varnode0.isConstant()) { strRes = varnode2longstring(varnode0); } // input is constant
+    	else if (varnode0.isRegister()) { strRes = getMemoryValue(varnode0.toString(language)); } // input is register
+    	else { strRes = getMemoryValue(getStringAddr(varnode0)); } // sinput is a variable
+    	
+    	updateMemoryWriteAccess(inst.getAddress(), getStringAddr(resVarnode), strRes);
+    }
     
     private void _doRecording2(PcodeOp pcode, Instruction inst) {
         String op = pcode.getMnemonic();
@@ -1469,9 +1479,9 @@ class IRInterpreter extends Interpreter {
         else if (op.equalsIgnoreCase("INT_XOR")) {_recordintbinaryop(pcode,'x',inst);}// do
         else if (op.equalsIgnoreCase("INT_AND")) {_recordintbinaryop(pcode,'n',inst);}// do
         else if (op.equalsIgnoreCase("INT_OR")) {_recordintbinaryop(pcode,'o',inst);}// do
-        /*
         else if (op.equalsIgnoreCase("STORE")) {_recordstore(pcode,inst);}// do
-        else if (op.equalsIgnoreCase("LOAD")) {return;} // do
+        else if (op.equalsIgnoreCase("LOAD")) {_recordload(pcode,inst);} // do
+        /*
         else if (op.equalsIgnoreCase("PIECE")) {_recordpiece(pcode,inst);}
         else if (op.equalsIgnoreCase("SUBPIECE")) {_recordsubpiece(pcode,inst);}
         else if (op.equalsIgnoreCase("INT_EQUAL")) {_recordintequal(pcode,inst);}// do
@@ -1515,99 +1525,71 @@ class IRInterpreter extends Interpreter {
     		strVal0 = varnode2longstring(varnode0);
     		
     		if (varnode1.isConstant()) { strVal1 = varnode2longstring(varnode1); } // second input is constant
-    			
     		else if (varnode1.isRegister()) { strVal1 = getMemoryValue(varnode1.toString(language)); } // second input is register
-    		
     		else { strVal1 = getMemoryValue(getStringAddr(varnode1)); } // second input is a variable
     	}
-    	
     	else if (varnode0.isRegister()) { // first input is register 
     		strVal0 = getMemoryValue(varnode0.toString(language));
     		
     		if (varnode1.isConstant()) { strVal1 = varnode2longstring(varnode1); } // second input is constant
-    			
     		else if (varnode1.isRegister()) { strVal1 = getMemoryValue(varnode1.toString(language)); } // second input is register
-    		
     		else { strVal1 = getMemoryValue(getStringAddr(varnode1)); } // second input is a variable
     	}
     	else { // first input is var
     		strVal0 = getMemoryValue(getStringAddr(varnode0));
     		
     		if (varnode1.isConstant()) { strVal1 = varnode2longstring(varnode1); } // second input is constant
-    			
     		else if (varnode1.isRegister()) { strVal1 = getMemoryValue(varnode1.toString(language)); } // second input is register
-    		
     		else { strVal1 = getMemoryValue(getStringAddr(varnode1)); } // second input is a variable
     	}
 
         if (op == '+') { strRes = m_SymCalc.symbolicAdd(strVal0, strVal1); }
         else { strRes = m_SymCalc.symbolicSub(strVal0, strVal1); }
-
         
         updateMemoryWriteAccess(inst.getAddress(), getStringAddr(resVarnode), strRes);
     }
     
-    //input0 	(special) 	Constant ID of space to store into.
-    //input1 		Varnode containing pointer offset of destination.
-    //input2 		Varnode containing data to be stored.
-    /*private void _recordstore(PcodeOp pcode,Instruction inst) {
-    	Varnode varnode1 = pcode.getInput(1);
+    //input0 	(special) Constant ID of space to store into.
+    //input1	Varnode containing pointer offset of destination.
+    //input2 	Varnode containing data to be stored.
+    private void _recordstore(PcodeOp pcode,Instruction inst) {
+    	Varnode varnode0 = pcode.getInput(0);
+		Varnode varnode1 = pcode.getInput(1);
 		Varnode varnode2 = pcode.getInput(2);
-		String strVal1, strVal2, strRes;
+		String strVal0, strVal1, strRes, dynAddr;
+		
+		// get unique 'name' of this dynamic address
+		strVal0 = Integer.toString(varnode0.getAddress().hashCode());
+		strVal1 = varnode2longstring(varnode1);
+		dynAddr = strVal0 + "+" + strVal1;
+		
+		// get data to be stored (varnode2)
+    	if (varnode2.isConstant()) { strRes = varnode2longstring(varnode2); } // input is constant
+    	else if (varnode2.isRegister()) { strRes = getMemoryValue(varnode2.toString(language)); } // input is register
+    	else { strRes = getMemoryValue(getStringAddr(varnode2)); } // sinput is a variable
+
+        updateMemoryWriteAccess(inst.getAddress(), dynAddr, strRes);
+    }
+    
+    //input0	address space
+    //input1	offset of source from address space
+    private void _recordload(PcodeOp pcode, Instruction inst) {
+    	Varnode varnode0 = pcode.getInput(0);
+		Varnode varnode1 = pcode.getInput(1);
+		String strVal0, strVal1, strRes, dynAddr;
 		Varnode resVarnode = pcode.getOutput();
 		
-    	if (varnode0.isConstant()) { // first input is constant 
-    		strVal0 = varnode2longstring(varnode0);
-    		if (varnode1.isConstant()) { strVal1 = varnode2longstring(varnode1); } // second input is constant
-    		else if (varnode1.isRegister()) { strVal1 = getMemoryValue(varnode1.toString(language)); } // second input is register
-    		else { strVal1 = getMemoryValue(getStringAddr(varnode1)); } // second input is a variable
-    	}
-    	else 
-    		printf("Error!");
-    	
-    	strRes = m_SymCalc.symbolicMul(strVal0, strVal1);
+		// get unique 'name' of this dynamic address
+		strVal0 = Integer.toString(varnode0.getAddress().hashCode());
+		strVal1 = varnode2longstring(varnode1);
+		dynAddr = strVal0 + "+" + strVal1;
+		
+		// get data to be loaded
+    	strRes = getMemoryValue(dynAddr);
+
         updateMemoryWriteAccess(inst.getAddress(), getStringAddr(resVarnode), strRes);
     }
-    
-    // 1st input: address space ; 2nd input: offset of source from address space
-    private void _recordload(PcodeOp pcode, Instruction inst) {
-        Varnode varnode0 = pcode.getInput(0);
-        Varnode varnode1 = pcode.getInput(1);
-        String strVal0, strVal1, strRes;
-        Address res = pcode.getOutput().getAddress();
-
-            String strAddr0 = _calcMemAddress(varnode0);
-            strVal0 = getMemoryValue(strAddr0);
-            
-            String strAddr1 = _calcMemAddress(varnode1);
-            strVal1 = getMemoryValue(strAddr1);
-            
-            // OPERATION TO-DO
-            // "special" input?
-            
-            updateMemoryWriteAccess(inst.getAddress(), res.toString(), strRes);
-    }
-    // input0: target address space's constant ID, input1: target's offset into addr space, input2: data to be stored
-    // how to exract dst address space and offset?
-    private void _recordstore(PcodeOp pcode, Instruction inst) {
-        Varnode varnode0 = pcode.getInput(0);
-        Varnode varnode1 = pcode.getInput(1);
-        Varnode varnode2 = pcode.getInput(2);
-        String strVal0, strVal1, strVal2, strRes;
-
-            String strAddr0 = _calcMemAddress(varnode0);
-            strVal0 = getMemoryValue(strAddr0);
-            
-            String strAddr1 = _calcMemAddress(varnode1);
-            strVal1 = getMemoryValue(strAddr1);
-            
-            String strAddr2 = _calcMemAddress(varnode2);
-            // OPERATION TO-DO
-            // "special" input?
-            
-            updateMemoryWriteAccess(inst.getAddress(), strAddr2, strRes);
-    }
-    
+    /*
     private void _recordpiece(PcodeOp pcode, Instruction inst) {
         Varnode varnode0 = pcode.getInput(0);
         Varnode varnode1 = pcode.getInput(1);
