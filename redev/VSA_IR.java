@@ -53,7 +53,7 @@ public class VSA_IR extends GhidraScript {
 		while(funcIter.hasNext() && !monitor.isCancelled()) {
 			Function func = funcIter.next();
 			String funcName = func.getName();
-			if (!funcName.equals("main")) {continue;} // testing
+			if (!funcName.equals("main")) {continue;} // select function to process
 			AddressSetView addrSV = func.getBody();
 			CodeBlockModel blkModel = new BasicBlockModel(program);
 			CodeBlockIterator codeBlkIt = blkModel.getCodeBlocksContaining(addrSV,monitor);
@@ -87,24 +87,18 @@ public class VSA_IR extends GhidraScript {
 			
 			List<CFGNode> processList = new CopyOnWriteArrayList<CFGNode>();
 			processList.add(startNode);
-			//int ctr = 0; // testing
 			CFGNode curr = null;
 			
-			for(int i = 0 ; i < processList.size() ; i++) { // testing; limit: 44
+			for(int i = 0 ; i < processList.size() ; i++) {
 				curr = processList.get(i);
 				if (curr.ctr > 7) {continue;} // threshold for infinite loop categorization
-				//ctr++; // testing
-				curr.ctr++; // increment visited pointer
+				curr.ctr++; 
 				for(CFGNode next : curr.successors) {
-					CFGNode toAdd = CFG.get(next.addrStart); // get successor object from CFG list
-					if (toAdd.ctr < 7) {processList.add(toAdd);} // only add if node is not considered infinite loop
+					CFGNode toAdd = CFG.get(next.addrStart);
+					if (toAdd.ctr < 7) {processList.add(toAdd);} 
 				}
 				funcAbsDomain = curr.process(funcAbsDomain);
 			}
-			
-			//if (iter.hasNext()) {println("List has next");}
-			//else {println("List is empty");}
-			//println(Integer.toString(ctr));
 			
 			for (Map.Entry<String,AccessedObject> entry : funcAbsDomain.entrySet()) {
 				println(entry.getValue().toString());
