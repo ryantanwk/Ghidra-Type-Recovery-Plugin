@@ -31,7 +31,6 @@ public class VSA_TypeRecReq extends GhidraScript {
 	private Language language;
 	private AddressSet codeSegRng;
 	private Hashtable<String, AccessedObject> funcAbsDomain = new Hashtable<String,AccessedObject>(); // Key:AccessedObject.location
-	private Hashtable<Address, CFGNode> CFG;
 	
 	@Override
 	public void run() {
@@ -46,78 +45,38 @@ public class VSA_TypeRecReq extends GhidraScript {
 			Function func = funcIter.next();
 			String funcName = func.getName();
 			if (!funcName.equals("main")) {continue;} // function selection
-			AddressSetView addrSV = func.getBody();
-			CodeBlockModel blkModel = new BasicBlockModel(program);
-			CodeBlockIterator codeBlkIt = blkModel.getCodeBlocksContaining(addrSV,monitor);
-			CFG = new Hashtable<Address, CFGNode>();
-			
-			while (codeBlkIt.hasNext()) {
-				CodeBlock codeBlk = codeBlkIt.next();
-				Address blkStartAddr = codeBlk.getFirstStartAddress();
-				CFG.put(blkStartAddr, new CFGNode(listing,func,program,codeBlk,blkStartAddr));
-			}
-			
-			for (CFGNode currNode : CFG.values()) {
-				Set<CFGNode> successors = new HashSet<>();
-				CodeBlock currCodeBlk = currNode.getCodeBlock();
-				CodeBlockReferenceIterator it = currCodeBlk.getDestinations(monitor);
-				
-				while (it.hasNext()) {
-					CodeBlockReference ref = it.next();
-					CodeBlock nxtCodeBlk = ref.getDestinationBlock();
-					Address addrStart = nxtCodeBlk.getFirstStartAddress();
-					CFGNode successor = CFG.get(addrStart);
-					
-					if (successor != null) { successors.add(successor); }
-				}
-				currNode.setSuccessors(successors);
-			}
-			
+
 			printf("Function name: %s entry: %s\n", func.getName(), func.getEntryPoint());
-			Address funcEntryAddr = func.getEntryPoint();
-			CFGNode startNode = CFG.get(funcEntryAddr);
 			
-			List<CFGNode> processList = new CopyOnWriteArrayList<CFGNode>();
-			processList.add(startNode);
-			CFGNode curr = null;
+			AddressSetView addrSV = func.getBody();
+			InstructionIterator iiter = listing.getInstructions(addrSV,true);
 			String printable;
 			
-			for(int i = 0 ; i < processList.size() ; i++) { 
-				curr = processList.get(i);
-				if (curr.ctr > 7) {continue;} // threshold for infinite loop categorization
-				curr.ctr++; 
-				for(CFGNode next : curr.successors) {
-					CFGNode toAdd = CFG.get(next.addrStart);
-					if (toAdd.ctr < 7) {processList.add(toAdd);} 
-				}
+			while (iiter.hasNext()) { // for each machine instruction
+				Instruction inst = iiter.next();
+				PcodeOp[] pcodeList = inst.getPcode(); 
 				
-				InstructionIterator instIt = listing.getInstructions(curr.addrSet,true);
-				while (instIt.hasNext()) { // process all pcodes for this node
-					Instruction inst = instIt.next();
-					PcodeOp[] pcodeList = inst.getPcode();
-					
-					for (PcodeOp currPcode : pcodeList) {
-						printable = currPcode.getMnemonic();
+				for (PcodeOp currPcode : pcodeList) { // for each pcode
+					printable = currPcode.getMnemonic();
 						
-						for (i = 0 ; i < currPcode.getNumInputs() ; i ++) {
-							Varnode input = currPcode.getInput(i);
-							if (input.isConstant()) {
-								printable = printable.concat(" " + input.toString(language));
-							}
-							else {
-								AccessedObject target = get(input);
-								printable = printable.concat(" (" + target.toString() + ")");
-							}
+					for (int i = 0 ; i < currPcode.getNumInputs() ; i ++) {
+						Varnode input = currPcode.getInput(i);
+						if (input.isConstant()) {
+							printable = printable.concat(" " + input.toString(language));
 						}
-						
-						funcAbsDomain = interpreter.process(funcAbsDomain,currPcode,inst);
-						Varnode output = currPcode.getOutput();
-						if (output != null) {
-							AccessedObject targetOutput = get(output);
-							printable = printable.concat(" = " + targetOutput.toString());
+						else {
+							AccessedObject target = get(input);
+							printable = printable.concat(" (" + target.toString() + ")");
 						}
-						println(printable);
 					}
+						
+					funcAbsDomain = interpreter.process(funcAbsDomain,currPcode,inst);
+					Varnode output = currPcode.getOutput();
+					if (output != null) {
+						AccessedObject targetOutput = get(output);
+						printable = printable.concat(" = " + targetOutput.toString());
+					}
+					println(printable);
 				}
 			}
 			println("----------------------------------------------------------------");
@@ -146,30 +105,6 @@ public class VSA_TypeRecReq extends GhidraScript {
     	
     	return returnable;
     }
-}
-
-class CFGNode {
-	private Program program;
-	private Listing listing;
-	private Function func;
-	public AddressSet addrSet;
-	public CodeBlock codeBlk;
-	public Set<CFGNode> successors;
-	public int ctr = 0;
-	public Address addrStart;
-	
-	public CFGNode(Listing listing, Function func, Program program, CodeBlock ghidraBlk, Address addrStart) {
-		this.program = program;
-		this.listing = listing;
-		this.func = func;
-		this.addrSet = ghidraBlk.intersect(func.getBody());
-		codeBlk = ghidraBlk; 
-		this.addrStart = addrStart;
-	}
-	
-	public void setSuccessors(Set<CFGNode> successors) { this.successors = successors; }
-	
-	public CodeBlock getCodeBlock() { return codeBlk; }
 }
 
 class IRInterpreter extends Interpreter {
