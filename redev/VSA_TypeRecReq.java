@@ -80,9 +80,15 @@ public class VSA_TypeRecReq extends GhidraScript {
 					Varnode output = currPcode.getOutput();
 					if (output != null) {
 						AccessedObject targetOutput = get(output);
-						printable = printable.concat(" = " + targetOutput.toString());
+						String outputPrint = targetOutput.toString();
+						printable = outputPrint.concat(" = " + printable);
+					}
+					else {
+						String nullPrint = "null";
+						printable = nullPrint.concat(" = " + printable);
 					}
 					printWriter.write(printable); // print to file
+					printWriter.write("\n");
 				}
 			}
 			println("-----------------------------------END-----------------------------------");
