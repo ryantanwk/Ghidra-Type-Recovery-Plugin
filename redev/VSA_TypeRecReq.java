@@ -1,4 +1,6 @@
 import java.io.IOException;
+import java.io.FileWriter;
+import java.io.PrintWriter;
 import java.util.*; // Map & List
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.lang.Math;
@@ -39,8 +41,12 @@ public class VSA_TypeRecReq extends GhidraScript {
 		language = program.getLanguage();
 		FunctionIterator funcIter = listing.getFunctions(true);
 		IRInterpreter interpreter = new IRInterpreter(program);
+		int pcodeCtr = 0;
 		
 		try {
+		FileWriter writer = new FileWriter("/home/shruti/NUS/type-inference/MyFile.txt", false);
+    	PrintWriter printWriter = new PrintWriter(writer);
+			
 		while(funcIter.hasNext() && !monitor.isCancelled()) {
 			Function func = funcIter.next();
 			String funcName = func.getName();
@@ -57,6 +63,7 @@ public class VSA_TypeRecReq extends GhidraScript {
 				PcodeOp[] pcodeList = inst.getPcode(); 
 				
 				for (PcodeOp currPcode : pcodeList) { // for each pcode
+					pcodeCtr++;
 					printable = currPcode.getMnemonic();
 						
 					for (int i = 0 ; i < currPcode.getNumInputs() ; i ++) {
@@ -76,10 +83,11 @@ public class VSA_TypeRecReq extends GhidraScript {
 						AccessedObject targetOutput = get(output);
 						printable = printable.concat(" = " + targetOutput.toString());
 					}
-					println(printable);
+					printWriter.write(printable); // print to file
+	    			printWriter.write("\n"); // print to file
 				}
 			}
-			println("----------------------------------------------------------------");
+			println("-----------------------------------END-----------------------------------");
 		}
 		} catch (Exception e) { System.err.println("Failed"); }
 	}
@@ -517,40 +525,42 @@ class VSACalculator {
 		
 		AccessedObject returnable;
 		
+		// arg0 unknown
 		if (arg0.stride == -1 || arg1.stride == -1) { 
 			arg0.stride = -1;
 			returnable = arg0; 
 		}
 		
-		else if ((arg1.stride % arg0.stride) == 0) { // strides of src is a multiple of stride of dst
+		// strides of src is a multiple of stride of dst
+		else if ((arg1.stride % arg0.stride) == 0) { 
 			arg0.lwrBnd = arg0.lwrBnd + arg1.lwrBnd;
 			arg0.uppBnd = arg0.uppBnd + arg1.uppBnd;
 		}
-		else if ((arg0.stride % arg1.stride) == 0) { // stride of dst is a multiple of stride of src
+		else if ((arg0.stride % arg1.stride) == 0) { 
 			int factor = arg0.stride/arg1.stride, numSrcVal = (arg1.uppBnd-arg1.lwrBnd)/arg1.stride, 
 					uppBndAdded = arg1.uppBnd, lwrBndAdded = arg1.lwrBnd;
 			
 			if (numSrcVal < factor) { // num values of src < (dst/src)
-				arg0.stride = 0;
-				returnable = arg0;
+				arg0.stride = -1;
 			}
-			
-			int curVal = arg1.lwrBnd;
-			for (int i = 0 ; i < numSrcVal ; i++) { // set uppBndAdded to largest value in src with a strided difference from dst.uppBnd
-				curVal = curVal + i*arg0.stride;
-				if (arg0.diffInStride(arg0.uppBnd,curVal))
-					uppBndAdded = curVal;
-			}
-			curVal = arg0.lwrBnd;
-			for (int i = 0 ; i < numSrcVal ; i++) { // set uppBndAdded as smallest value in src with a strided difference from dst.lwrBnd
-				curVal = curVal + i*arg0.stride;
-				if (arg0.diffInStride(arg1.lwrBnd,curVal)) {
-					lwrBndAdded = curVal;
-					break;
+			else {
+				int curVal = arg1.lwrBnd;
+				for (int i = 0 ; i < numSrcVal ; i++) { // set uppBndAdded to largest value in src with a strided difference from dst.uppBnd
+					curVal = curVal + i*arg0.stride;
+					if (arg0.diffInStride(arg0.uppBnd,curVal))
+						uppBndAdded = curVal;
 				}
+				curVal = arg0.lwrBnd;
+				for (int i = 0 ; i < numSrcVal ; i++) { // set uppBndAdded as smallest value in src with a strided difference from dst.lwrBnd
+					curVal = curVal + i*arg0.stride;
+					if (arg0.diffInStride(arg1.lwrBnd,curVal)) {
+						lwrBndAdded = curVal;
+						break;
+					}
+				}
+				arg0.uppBnd += uppBndAdded;
+				arg0.lwrBnd += lwrBndAdded;
 			}
-			arg0.uppBnd += uppBndAdded;
-			arg0.lwrBnd += lwrBndAdded;
 		}
 		else {
 			arg0.stride = -1;
@@ -558,18 +568,16 @@ class VSACalculator {
 		
 		returnable = arg0;
 		
-		if (returnable.symbolic == null) {
-			if (arg1.symbolic != null) { returnable.symbolic = arg1.symbolic; }
-		}
-		else {
-			if (arg1.symbolic != null) { 
-				returnable.symbolic = returnable.symbolic + "+" + arg1.symbolic;
-			}
-		}
-		// setting symbolic value
     	if (arg1.symbolic != null) {
-    		if (arg0.symbolic == null) { arg0.symbolic = arg1.symbolic; }
-    		else { arg0.symbolic = arg0.symbolic + "+" + arg1.symbolic; }
+    		if (returnable.symbolic == null) { returnable.symbolic = arg1.symbolic; }
+    		else {
+    			String[] parts = returnable.symbolic.split("-|\\+");
+    			boolean symExist = false;
+    			for (int i = 0 ; i < parts.length ; i++) {
+    				if (parts[i].equals(arg1.symbolic)) {symExist = true;}
+    			}
+    			if (!symExist) {returnable.symbolic = returnable.symbolic + "+" + arg1.symbolic;}
+    		}
     	}
 		return returnable;
 	}
@@ -586,8 +594,7 @@ class VSACalculator {
 		AccessedObject returnable;
 		
 		if (arg0.stride == -1 || arg1.stride == -1) { 
-			arg0.stride = -1;
-			returnable = arg0; 
+			arg0.stride = -1; 
 		}
 		
 		if ((arg1.stride % arg0.stride) == 0) { // strides of src is a multiple of stride of dst
@@ -600,42 +607,42 @@ class VSACalculator {
 			
 			if (numSrcVal < factor) { // num values of src < (dst/src)
 				arg0.stride = -1;
-				returnable = arg0;
 			}
-			int curVal = arg1.lwrBnd;
-			for (int i = 0 ; i < numSrcVal ; i++) { // set lwrBndSub to largest value in src with a strided difference from dst.uppBnd
-				curVal = curVal + i*arg1.stride;
-				if (arg0.diffInStride(arg0.lwrBnd,curVal))
-					lwrBndSub = curVal;
-			}
-			curVal = arg1.lwrBnd;
-			for (int i = 0 ; i < numSrcVal ; i++) { // set uppBndASub as smallest value in src with a strided difference from dst.lwrBnd
-				curVal = curVal + i*arg1.stride;
-				if (arg0.diffInStride(arg0.uppBnd,curVal)) {
-					uppBndSub = curVal;
-					break;
+			else {
+				int curVal = arg1.lwrBnd;
+				for (int i = 0 ; i < numSrcVal ; i++) { // set lwrBndSub to largest value in src with a strided difference from dst.uppBnd
+					curVal = curVal + i*arg1.stride;
+					if (arg0.diffInStride(arg0.lwrBnd,curVal))
+						lwrBndSub = curVal;
 				}
+				curVal = arg1.lwrBnd;
+				for (int i = 0 ; i < numSrcVal ; i++) { // set uppBndASub as smallest value in src with a strided difference from dst.lwrBnd
+					curVal = curVal + i*arg1.stride;
+					if (arg0.diffInStride(arg0.uppBnd,curVal)) {
+						uppBndSub = curVal;
+						break;
+					}
+				}
+				arg0.lwrBnd -= lwrBndSub;
+				arg0.uppBnd -= uppBndSub;
 			}
-			arg0.lwrBnd -= lwrBndSub;
-			arg0.uppBnd -= uppBndSub;
 		}
 		else {
 			arg0.stride = -1;
 		}
 		
 		returnable = arg0;
-		
-		if (returnable.symbolic == null) {
-			if (arg1.symbolic != null) { returnable.symbolic = arg1.symbolic; }
-		}
-		else {
-			if (arg1.symbolic != null) { 
-				returnable.symbolic = returnable.symbolic + "+" + arg1.symbolic; 
-			}
-		}// setting symbolic value
+
     	if (arg1.symbolic != null) {
-    		if (arg0.symbolic == null) { arg0.symbolic = arg1.symbolic; }
-    		else { arg0.symbolic = arg0.symbolic + "-" + arg1.symbolic; }
+    		if (returnable.symbolic == null) { returnable.symbolic = arg1.symbolic; }
+    		else {
+    			String[] parts = returnable.symbolic.split("-|\\+");
+    			boolean symExist = false;
+    			for (int i = 0 ; i < parts.length ; i++) {
+    				if (parts[i].equals(arg1.symbolic)) {symExist = true;}
+    			}
+    			if (!symExist) {returnable.symbolic = returnable.symbolic + "-" + arg1.symbolic;}
+    		}
     	}
 		return returnable;
 	}
