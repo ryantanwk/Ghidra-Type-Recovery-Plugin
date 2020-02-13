@@ -3,6 +3,7 @@ import java.io.FileWriter;
 import java.io.PrintWriter;
 import java.util.*; // Map & List
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.TimeUnit;
 import java.lang.Math;
 import java.lang.Object;
 import java.math.BigInteger;
@@ -41,16 +42,15 @@ public class VSA_TypeRecReq extends GhidraScript {
 		language = program.getLanguage();
 		FunctionIterator funcIter = listing.getFunctions(true);
 		IRInterpreter interpreter = new IRInterpreter(program);
-		int pcodeCtr = 0;
 		
 		try {
-		FileWriter writer = new FileWriter("/home/shruti/NUS/type-inference/MyFile.txt", false);
-    	PrintWriter printWriter = new PrintWriter(writer);
+			FileWriter writer = new FileWriter("/home/shruti/NUS/type-inference/MyFile.txt", false);
+    		PrintWriter printWriter = new PrintWriter(writer);
 			
 		while(funcIter.hasNext() && !monitor.isCancelled()) {
 			Function func = funcIter.next();
 			String funcName = func.getName();
-			if (!funcName.equals("main")) {continue;} // function selection
+			if (!funcName.equals("generateMTFValues")) {continue;} // function selection
 
 			printf("Function name: %s entry: %s\n", func.getName(), func.getEntryPoint());
 			
@@ -63,7 +63,6 @@ public class VSA_TypeRecReq extends GhidraScript {
 				PcodeOp[] pcodeList = inst.getPcode(); 
 				
 				for (PcodeOp currPcode : pcodeList) { // for each pcode
-					pcodeCtr++;
 					printable = currPcode.getMnemonic();
 						
 					for (int i = 0 ; i < currPcode.getNumInputs() ; i ++) {
@@ -84,10 +83,10 @@ public class VSA_TypeRecReq extends GhidraScript {
 						printable = printable.concat(" = " + targetOutput.toString());
 					}
 					printWriter.write(printable); // print to file
-	    			printWriter.write("\n"); // print to file
 				}
 			}
 			println("-----------------------------------END-----------------------------------");
+			printWriter.close();
 		}
 		} catch (Exception e) { System.err.println("Failed"); }
 	}
