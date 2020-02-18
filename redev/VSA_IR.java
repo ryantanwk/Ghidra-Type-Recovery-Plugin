@@ -1,12 +1,13 @@
 import java.io.IOException;
+import java.io.FileWriter;
+import java.io.PrintWriter;
 import java.util.*; // Map & List
 import java.util.concurrent.CopyOnWriteArrayList;
-
+import java.util.concurrent.TimeUnit;
 import java.lang.Math;
 import java.lang.Object;
 import java.math.BigInteger;
 import java.text.DecimalFormat;
-
 import ghidra.program.model.listing.*;
 import ghidra.program.model.block.*; //CodeBlock && CodeBlockImpl
 import ghidra.program.model.address.*;
@@ -21,26 +22,18 @@ import ghidra.pcodeCPort.space.*;
 import ghidra.program.database.*;
 import ghidra.program.database.function.*;
 import ghidra.program.database.code.*;
-
 import ghidra.program.model.data.*;
 import ghidra.program.model.symbol.*;
 import ghidra.program.model.pcode.*;
-
 import ghidra.util.task.TaskMonitor; // TaskMonitor
 import ghidra.app.script.GhidraScript;
-
-/*
- * 1. Varnode pointer (C function)
- * 2. struc detection (verify varnode offset)
- */
 
 public class VSA_IR extends GhidraScript {
 	private Program program;
 	private Listing listing;
 	private Language language;
 	private AddressSet codeSegRng;
-	private Hashtable<String, AccessedObject> funcAbsDomain = new Hashtable<String,AccessedObject>(); // Key:AccessedObject.location
-	private Hashtable<Address, CFGNode> CFG;
+	private Hashtable<String, AccessedObject> funcAbsDomain = new Hashtable<String,AccessedObject>();
 	
 	@Override
 	public void run() {
@@ -48,106 +41,92 @@ public class VSA_IR extends GhidraScript {
 		listing = program.getListing();
 		language = program.getLanguage();
 		FunctionIterator funcIter = listing.getFunctions(true);
+		IRInterpreter interpreter = new IRInterpreter(program);
 		
 		try {
+			FileWriter writer = new FileWriter("/home/ryan/Documents/MyFile.txt", false); // writting to file
+    		PrintWriter printWriter = new PrintWriter(writer); // writting to file
+			
 		while(funcIter.hasNext() && !monitor.isCancelled()) {
 			Function func = funcIter.next();
 			String funcName = func.getName();
-			if (!funcName.equals("main")) {continue;} // select function to process
-			AddressSetView addrSV = func.getBody();
-			CodeBlockModel blkModel = new BasicBlockModel(program);
-			CodeBlockIterator codeBlkIt = blkModel.getCodeBlocksContaining(addrSV,monitor);
-			CFG = new Hashtable<Address, CFGNode>();
-			
-			while (codeBlkIt.hasNext()) {
-				CodeBlock codeBlk = codeBlkIt.next();
-				Address blkStartAddr = codeBlk.getFirstStartAddress();
-				CFG.put(blkStartAddr, new CFGNode(listing,func,program,codeBlk,blkStartAddr));
-			}
-			
-			for (CFGNode currNode : CFG.values()) {
-				Set<CFGNode> successors = new HashSet<>();
-				CodeBlock currCodeBlk = currNode.getCodeBlock();
-				CodeBlockReferenceIterator it = currCodeBlk.getDestinations(monitor);
-				
-				while (it.hasNext()) {
-					CodeBlockReference ref = it.next();
-					CodeBlock nxtCodeBlk = ref.getDestinationBlock();
-					Address addrStart = nxtCodeBlk.getFirstStartAddress();
-					CFGNode successor = CFG.get(addrStart);
-					
-					if (successor != null) { successors.add(successor); }
-				}
-				currNode.setSuccessors(successors);
-			}
-			
+			if (!funcName.equals("generateMTFValues")) {continue;} // function selection
+
 			printf("Function name: %s entry: %s\n", func.getName(), func.getEntryPoint());
-			Address funcEntryAddr = func.getEntryPoint();
-			CFGNode startNode = CFG.get(funcEntryAddr);
 			
-			List<CFGNode> processList = new CopyOnWriteArrayList<CFGNode>();
-			processList.add(startNode);
-			CFGNode curr = null;
+			AddressSetView addrSV = func.getBody();
+			InstructionIterator iiter = listing.getInstructions(addrSV,true);
+			String printable;
 			
-			for(int i = 0 ; i < processList.size() ; i++) {
-				curr = processList.get(i);
-				if (curr.ctr > 7) {continue;} // threshold for infinite loop categorization
-				curr.ctr++; 
-				for(CFGNode next : curr.successors) {
-					CFGNode toAdd = CFG.get(next.addrStart);
-					if (toAdd.ctr < 7) {processList.add(toAdd);} 
+			while (iiter.hasNext()) { 
+				Instruction inst = iiter.next();
+				PcodeOp[] pcodeList = inst.getPcode(); 
+				
+				for (PcodeOp currPcode : pcodeList) { 
+					printable = currPcode.getMnemonic();
+						
+					for (int i = 0 ; i < currPcode.getNumInputs() ; i ++) {
+						Varnode input = currPcode.getInput(i);
+						if (input.isConstant()) {
+							printable = printable.concat(" " + input.toString(language));
+						}
+						else {
+							AccessedObject target = get(input);
+							printable = printable.concat(" (" + target.toString() + ")");
+						}
+					}
+						
+					funcAbsDomain = interpreter.process(funcAbsDomain,currPcode,inst);
+					Varnode output = currPcode.getOutput();
+					if (output != null) {
+						AccessedObject targetOutput = get(output);
+						String outputPrint = targetOutput.toString();
+						printable = outputPrint.concat(" = " + printable);
+					}
+					else {
+						String nullPrint = "null";
+						printable = nullPrint.concat(" = " + printable);
+					}
+					printWriter.write(printable); // write to file
+					printWriter.write("\n"); // write to file
+	    			//println(printable); // write to console
 				}
-				funcAbsDomain = curr.process(funcAbsDomain);
-			}
-			
+			}	
+			//println("----------------------------------------------------------------"); // write to console
+			printWriter.write("----------------------------------------------------------------\n"); // write to file
+
 			for (Map.Entry<String,AccessedObject> entry : funcAbsDomain.entrySet()) {
-				println(entry.getValue().toString());
+				printWriter.write(entry.getValue().toString()); // write to file
+				printWriter.write("\n"); // write to file
+				//println(entry.getValue().toString()); // write to console
 			}
-			println("----------------------------------------------------------------");
+			println("-----------------------------------END-----------------------------------");
+			printWriter.close();
 		}
 		} catch (Exception e) { System.err.println("Failed"); }
 	}
-}
-
-class CFGNode {
-	private Program program;
-	private Listing listing;
-	private Function func;
-	private AddressSet addrSet;
-	private IRInterpreter interpreter;
-	public CodeBlock codeBlk;
-	public Set<CFGNode> successors;
-	public int ctr = 0;
-	public Address addrStart;
-	
-	public CFGNode(Listing listing, Function func, Program program, CodeBlock ghidraBlk, Address addrStart) {
-		this.program = program;
-		this.listing = listing;
-		this.func = func;
-		this.addrSet = ghidraBlk.intersect(func.getBody());
-		interpreter = new IRInterpreter(program);
-		codeBlk = ghidraBlk; 
-		this.addrStart = addrStart;
-	}
-	
-	public Hashtable<String, AccessedObject> process(Hashtable<String, AccessedObject> absEnv) {
-		
-		InstructionIterator instIt = listing.getInstructions(addrSet,true);
-		
-		while (instIt.hasNext()) { // process all pcodes for this node
-			Instruction inst = instIt.next();
-			PcodeOp[] pcodeList = inst.getPcode();
-			
-			for (PcodeOp currPcode : pcodeList) {
-				absEnv = interpreter.process(absEnv,currPcode,inst);
-			}
-		}
-		return absEnv;
-	}
-	
-	public void setSuccessors(Set<CFGNode> successors) { this.successors = successors; }
-	
-	public CodeBlock getCodeBlock() { return codeBlk; }
+    public AccessedObject get(Varnode varnode) {
+    	AccessedObject returnable;
+    	
+    	if (varnode.isRegister()) {
+    		returnable = funcAbsDomain.get(varnode.toString(language));
+    		if (returnable == null) {
+    			returnable = new AccessedObject(1,0,0,varnode.getSize(),varnode.toString(language));
+    			returnable.symbolic = varnode.toString(language);
+    			funcAbsDomain.put(returnable.location,returnable);
+    		}
+    	}
+    	else {
+    		returnable = funcAbsDomain.get(Long.toString(varnode.getOffset()));
+    		if (returnable == null) { 
+    			returnable = new AccessedObject(-1,0,0,varnode.getSize(),
+    				Long.toString(varnode.getOffset())); 
+    			funcAbsDomain.put(returnable.location,returnable);
+    		}
+    	}
+    	
+    	return returnable;
+    }
 }
 
 class IRInterpreter extends Interpreter {
@@ -443,7 +422,7 @@ class IRInterpreter extends Interpreter {
      * OR
      * Create a new AccessedObject for input, put into absEnv & return AccessedObject
      */
-    private AccessedObject get(Varnode varnode) {
+    public AccessedObject get(Varnode varnode) {
     	AccessedObject returnable;
     	
     	if (varnode.isRegister()) {
@@ -493,22 +472,22 @@ public String location; // strided interval || symbolic || symbolic + strided in
 		String printable;
 		if (stride == -1) {
 			if (symbolic == null) {
-				printable = String.format("Location: " + location + " Size: " + 
-						Integer.toString(size) + " Interval: Unknown");
+				printable = String.format("Location:" + location + " Size:" + 
+						Integer.toString(size) + " Interval:Unknown");
 			}
 			else {
-				printable = String.format("Location: " + location + " Size: " + 
-						Integer.toString(size) + " Interval: " + symbolic + " + Unknown");
+				printable = String.format("Location:" + location + " Size:" + 
+						Integer.toString(size) + " Interval:" + symbolic + " + Unknown");
 			}
 		}
 		else if (symbolic != null) {
-			printable = String.format("Location: " + location + " Size: " + 
-					Integer.toString(size) + " Interval: " + symbolic + "+" + Integer.toString(stride) + 
+			printable = String.format("Location:" + location + " Size:" + 
+					Integer.toString(size) + " Interval:" + symbolic + "+" + Integer.toString(stride) + 
 					"[" + Integer.toString(lwrBnd) + "," + Integer.toString(uppBnd) + "]");
 		}
 		else {
-			printable = String.format("Location: " + location + " Size: " + 
-				Integer.toString(size) + " Interval: " + Integer.toString(stride) + 
+			printable = String.format("Location:" + location + " Size:" + 
+				Integer.toString(size) + " Interval:" + Integer.toString(stride) + 
 				"[" + Integer.toString(lwrBnd) + "," + Integer.toString(uppBnd) + "]");
 		} 
 		return printable;
@@ -520,7 +499,7 @@ public String location; // strided interval || symbolic || symbolic + strided in
 					"," + Integer.toString(uppBnd) + "]");
 		}
 		else {
-			loc = String.format(symbolic + " + " + Integer.toString(stride) + "[" + 
+			loc = String.format(symbolic + "+" + Integer.toString(stride) + "[" + 
 					Integer.toString(lwrBnd) + "," + Integer.toString(uppBnd) + "]");
 		}
 		return loc;
@@ -560,40 +539,42 @@ class VSACalculator {
 		
 		AccessedObject returnable;
 		
+		// arg0 unknown
 		if (arg0.stride == -1 || arg1.stride == -1) { 
 			arg0.stride = -1;
 			returnable = arg0; 
 		}
 		
-		else if ((arg1.stride % arg0.stride) == 0) { // strides of src is a multiple of stride of dst
+		// strides of src is a multiple of stride of dst
+		else if ((arg1.stride % arg0.stride) == 0) { 
 			arg0.lwrBnd = arg0.lwrBnd + arg1.lwrBnd;
 			arg0.uppBnd = arg0.uppBnd + arg1.uppBnd;
 		}
-		else if ((arg0.stride % arg1.stride) == 0) { // stride of dst is a multiple of stride of src
+		else if ((arg0.stride % arg1.stride) == 0) { 
 			int factor = arg0.stride/arg1.stride, numSrcVal = (arg1.uppBnd-arg1.lwrBnd)/arg1.stride, 
 					uppBndAdded = arg1.uppBnd, lwrBndAdded = arg1.lwrBnd;
 			
 			if (numSrcVal < factor) { // num values of src < (dst/src)
-				arg0.stride = 0;
-				returnable = arg0;
+				arg0.stride = -1;
 			}
-			
-			int curVal = arg1.lwrBnd;
-			for (int i = 0 ; i < numSrcVal ; i++) { // set uppBndAdded to largest value in src with a strided difference from dst.uppBnd
-				curVal = curVal + i*arg0.stride;
-				if (arg0.diffInStride(arg0.uppBnd,curVal))
-					uppBndAdded = curVal;
-			}
-			curVal = arg0.lwrBnd;
-			for (int i = 0 ; i < numSrcVal ; i++) { // set uppBndAdded as smallest value in src with a strided difference from dst.lwrBnd
-				curVal = curVal + i*arg0.stride;
-				if (arg0.diffInStride(arg1.lwrBnd,curVal)) {
-					lwrBndAdded = curVal;
-					break;
+			else {
+				int curVal = arg1.lwrBnd;
+				for (int i = 0 ; i < numSrcVal ; i++) { // set uppBndAdded to largest value in src with a strided difference from dst.uppBnd
+					curVal = curVal + i*arg0.stride;
+					if (arg0.diffInStride(arg0.uppBnd,curVal))
+						uppBndAdded = curVal;
 				}
+				curVal = arg0.lwrBnd;
+				for (int i = 0 ; i < numSrcVal ; i++) { // set uppBndAdded as smallest value in src with a strided difference from dst.lwrBnd
+					curVal = curVal + i*arg0.stride;
+					if (arg0.diffInStride(arg1.lwrBnd,curVal)) {
+						lwrBndAdded = curVal;
+						break;
+					}
+				}
+				arg0.uppBnd += uppBndAdded;
+				arg0.lwrBnd += lwrBndAdded;
 			}
-			arg0.uppBnd += uppBndAdded;
-			arg0.lwrBnd += lwrBndAdded;
 		}
 		else {
 			arg0.stride = -1;
@@ -601,18 +582,16 @@ class VSACalculator {
 		
 		returnable = arg0;
 		
-		if (returnable.symbolic == null) {
-			if (arg1.symbolic != null) { returnable.symbolic = arg1.symbolic; }
-		}
-		else {
-			if (arg1.symbolic != null) { 
-				returnable.symbolic = returnable.symbolic + "+" + arg1.symbolic;
-			}
-		}
-		// setting symbolic value
     	if (arg1.symbolic != null) {
-    		if (arg0.symbolic == null) { arg0.symbolic = arg1.symbolic; }
-    		else { arg0.symbolic = arg0.symbolic + "+" + arg1.symbolic; }
+    		if (returnable.symbolic == null) { returnable.symbolic = arg1.symbolic; }
+    		else {
+    			String[] parts = returnable.symbolic.split("-|\\+");
+    			boolean symExist = false;
+    			for (int i = 0 ; i < parts.length ; i++) {
+    				if (parts[i].equals(arg1.symbolic)) {symExist = true;}
+    			}
+    			if (!symExist) {returnable.symbolic = returnable.symbolic + "+" + arg1.symbolic;}
+    		}
     	}
 		return returnable;
 	}
@@ -629,8 +608,7 @@ class VSACalculator {
 		AccessedObject returnable;
 		
 		if (arg0.stride == -1 || arg1.stride == -1) { 
-			arg0.stride = -1;
-			returnable = arg0; 
+			arg0.stride = -1; 
 		}
 		
 		if ((arg1.stride % arg0.stride) == 0) { // strides of src is a multiple of stride of dst
@@ -643,42 +621,42 @@ class VSACalculator {
 			
 			if (numSrcVal < factor) { // num values of src < (dst/src)
 				arg0.stride = -1;
-				returnable = arg0;
 			}
-			int curVal = arg1.lwrBnd;
-			for (int i = 0 ; i < numSrcVal ; i++) { // set lwrBndSub to largest value in src with a strided difference from dst.uppBnd
-				curVal = curVal + i*arg1.stride;
-				if (arg0.diffInStride(arg0.lwrBnd,curVal))
-					lwrBndSub = curVal;
-			}
-			curVal = arg1.lwrBnd;
-			for (int i = 0 ; i < numSrcVal ; i++) { // set uppBndASub as smallest value in src with a strided difference from dst.lwrBnd
-				curVal = curVal + i*arg1.stride;
-				if (arg0.diffInStride(arg0.uppBnd,curVal)) {
-					uppBndSub = curVal;
-					break;
+			else {
+				int curVal = arg1.lwrBnd;
+				for (int i = 0 ; i < numSrcVal ; i++) { // set lwrBndSub to largest value in src with a strided difference from dst.uppBnd
+					curVal = curVal + i*arg1.stride;
+					if (arg0.diffInStride(arg0.lwrBnd,curVal))
+						lwrBndSub = curVal;
 				}
+				curVal = arg1.lwrBnd;
+				for (int i = 0 ; i < numSrcVal ; i++) { // set uppBndASub as smallest value in src with a strided difference from dst.lwrBnd
+					curVal = curVal + i*arg1.stride;
+					if (arg0.diffInStride(arg0.uppBnd,curVal)) {
+						uppBndSub = curVal;
+						break;
+					}
+				}
+				arg0.lwrBnd -= lwrBndSub;
+				arg0.uppBnd -= uppBndSub;
 			}
-			arg0.lwrBnd -= lwrBndSub;
-			arg0.uppBnd -= uppBndSub;
 		}
 		else {
 			arg0.stride = -1;
 		}
 		
 		returnable = arg0;
-		
-		if (returnable.symbolic == null) {
-			if (arg1.symbolic != null) { returnable.symbolic = arg1.symbolic; }
-		}
-		else {
-			if (arg1.symbolic != null) { 
-				returnable.symbolic = returnable.symbolic + "+" + arg1.symbolic; 
-			}
-		}// setting symbolic value
+
     	if (arg1.symbolic != null) {
-    		if (arg0.symbolic == null) { arg0.symbolic = arg1.symbolic; }
-    		else { arg0.symbolic = arg0.symbolic + "-" + arg1.symbolic; }
+    		if (returnable.symbolic == null) { returnable.symbolic = arg1.symbolic; }
+    		else {
+    			String[] parts = returnable.symbolic.split("-|\\+");
+    			boolean symExist = false;
+    			for (int i = 0 ; i < parts.length ; i++) {
+    				if (parts[i].equals(arg1.symbolic)) {symExist = true;}
+    			}
+    			if (!symExist) {returnable.symbolic = returnable.symbolic + "-" + arg1.symbolic;}
+    		}
     	}
 		return returnable;
 	}
