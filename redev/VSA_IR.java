@@ -29,6 +29,8 @@ import ghidra.util.task.TaskMonitor; // TaskMonitor
 import ghidra.app.script.GhidraScript;
 
 public class VSA_IR extends GhidraScript {
+    private String func_name = "Perl_av_extend";
+    private String output_dir = "/home/ryan/Projects/ghidra/VSAoutputs/";
 	private Program program;
 	private Listing listing;
 	private Language language;
@@ -44,13 +46,13 @@ public class VSA_IR extends GhidraScript {
 		IRInterpreter interpreter = new IRInterpreter(program);
 		
 		try {
-			FileWriter writer = new FileWriter("/home/ryan/Documents/MyFile.txt", false); // writting to file
+			FileWriter writer = new FileWriter(output_dir+"VSAoutput_"+func_name, false); // writting to file
     		PrintWriter printWriter = new PrintWriter(writer); // writting to file
 			
 		while(funcIter.hasNext() && !monitor.isCancelled()) {
 			Function func = funcIter.next();
 			String funcName = func.getName();
-			if (!funcName.equals("generateMTFValues")) {continue;} // function selection
+			if (!funcName.equals(func_name)) {continue;} // function selection
 
 			printf("Function name: %s entry: %s\n", func.getName(), func.getEntryPoint());
 			
@@ -89,18 +91,15 @@ public class VSA_IR extends GhidraScript {
 					}
 					printWriter.write(printable); // write to file
 					printWriter.write("\n"); // write to file
-	    			//println(printable); // write to console
 				}
 			}	
-			//println("----------------------------------------------------------------"); // write to console
-			printWriter.write("----------------------------------------------------------------\n"); // write to file
+			printWriter.write("\n------------------ ABSTRACT DOMAIN ------------------\n\n"); // write to file
 
 			for (Map.Entry<String,AccessedObject> entry : funcAbsDomain.entrySet()) {
 				printWriter.write(entry.getValue().toString()); // write to file
 				printWriter.write("\n"); // write to file
-				//println(entry.getValue().toString()); // write to console
 			}
-			println("-----------------------------------END-----------------------------------");
+			println("Value-Set Analysis Completed.");
 			printWriter.close();
 		}
 		} catch (Exception e) { System.err.println("Failed"); }
