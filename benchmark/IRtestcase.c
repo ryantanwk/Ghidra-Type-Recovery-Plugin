@@ -13,7 +13,6 @@ int main() {
 	obj.a = 7;
 	strcpy(obj.title,"ab");
 	obj.b = 11;
-	//struct Books obj = {3,5};
 	int j = 5;
 	return 0;
 }
