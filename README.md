@@ -30,6 +30,7 @@ Launch Ghidra.
 
 Run the script 'VSA_IR.java' from Ghidra's GUI.
 
-NOTE: By default, the script processes the function 'main' and prints the results to the file "VSAoutput_<function name>.txt" to in the home directory; in the default setting the filename will be "VSAoutput_main.txt". Change the function to be processed by changing the variable 'func_name' in VSA_IR.java. Change the output directory by changing the variable 'output_dir' in VSA_IR.java
+NOTE: By default, the program prints its results to the file "VSAoutput_<function name>.txt" to in the home directory. More information about how to customize the output directory can be found [here][readme].
 
 [ghidra]: https://github.com/NationalSecurityAgency/ghidra
+[readme]: https://github.com/ryantanwk/Ghidra-Type-Recovery-Plugin/blob/master/src/README
