@@ -14,11 +14,19 @@ Pointer-analysis produces an over-approximation of the value-set of addresses th
 
 PROGRAMNAME was developed and tested on Ubuntu 18.04.3LTS and deployed on Ghidra v9.1.
 
-## Usage on Ubuntu 18.04.3LTS
+## Installation
 
 Install [Ghidra][ghidra].
 
-Download this repository and create a soft-link to 'src' named 'ghidra_scripts' in the home directory.
+Clone this repository to your device.
+
+Create a soft-link to 'src' named 'ghidra_scripts' in the home directory using the 'ln' CLI command.
+
+> sudo ln -s <path to 'src'> <path to home directory>/ghidra_scripts
+
+## Usage on Ubuntu 18.04.3LTS
+
+Launch Ghidra.
 
 Run the script 'VSA_IR.java' from Ghidra's GUI.
 
