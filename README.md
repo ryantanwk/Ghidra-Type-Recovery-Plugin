@@ -20,7 +20,7 @@ Install [Ghidra][ghidra].
 
 Clone this repository to your device.
 
-Create a soft-link to 'src' named 'ghidra_scripts' in the home directory using the 'ln' CLI command.
+Create a symbolic link to 'src' named 'ghidra_scripts' in the home directory using `ln`.
 
 > sudo ln -s <path to 'src'> <path to home directory>/ghidra_scripts
 
