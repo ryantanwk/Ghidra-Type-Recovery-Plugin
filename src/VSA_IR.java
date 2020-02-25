@@ -1,3 +1,14 @@
+/**
+* The VSA_IR program is an abstract interpretation of a function's variables and registers used 
+* The abstract domain is printed to a file.
+* VSA_IR also identifies the input/output varnodes of each pcode and prints it to the same file
+*
+* @author  Yuan Ping Hai
+* @author  Ryan Tan
+* @author  Ahmad Soltani 
+* @version 1.0 
+*/
+
 import java.io.IOException;
 import java.io.FileWriter;
 import java.io.PrintWriter;
@@ -29,14 +40,20 @@ import ghidra.util.task.TaskMonitor; // TaskMonitor
 import ghidra.app.script.GhidraScript;
 
 public class VSA_IR extends GhidraScript {
-    private String func_name = "Perl_av_extend";
-    private String output_dir = "/home/ryan/Projects/ghidra/VSAoutputs/";
+    private String func_name = "main";
+    private String output_dir = "/home/ryan/Documents/";
 	private Program program;
 	private Listing listing;
 	private Language language;
 	private AddressSet codeSegRng;
 	private Hashtable<String, AccessedObject> funcAbsDomain = new Hashtable<String,AccessedObject>();
 	
+	/**
+	 * This is the first function to run.
+	 * 
+	 * @return		Void.
+	 * @exception	InvalidPathException for invalid directory path
+	 */
 	@Override
 	public void run() {
 		program = state.getCurrentProgram();
@@ -104,6 +121,14 @@ public class VSA_IR extends GhidraScript {
 		}
 		} catch (Exception e) { System.err.println("Failed"); }
 	}
+	
+	/**
+	 * Retreives the AccessedObject related to a varnode from the abstract domain if it exists.
+	 * If not, create an AccessObjecct in the abstract domain for the varnode and return it.
+	 * 
+	 * @param	varnode The target varnode whose AccessedObject we want to retrieve.
+	 * @return	AccessedObject representing varnode.
+	 */
     public AccessedObject get(Varnode varnode) {
     	AccessedObject returnable;
     	
@@ -134,12 +159,25 @@ class IRInterpreter extends Interpreter {
 	private static Language language;
 	Hashtable<String, AccessedObject> absEnv; // key : varnode hashcode || value : AccessedObject
 	
+	/**
+	 * IRInterpreter constructor.
+	 * 
+	 * @param	program Program of binary
+	 * @return	IRInterpreter Returns a an IRInterpreter object for a program.
+	 */
 	public IRInterpreter(Program program) {
 		calc = new VSACalculator();
 		this.program = program;
 		this.language = program.getLanguage();
 	}
 	
+	/**
+	 * Identifies the target pcode and calls the appropriate function.
+	 * 
+	 * @param	absEnv Abstract environment of the function at the current program point.
+	 * @param	pcode Target pcode.
+	 * @return	updated abstract environment after processing target pcode.
+	 */
 	public Hashtable<String, AccessedObject> process(Hashtable<String, AccessedObject> absEnv, PcodeOp pcode, Instruction inst) {
 		this.absEnv = absEnv;
 		String op = pcode.getMnemonic();
@@ -157,6 +195,13 @@ class IRInterpreter extends Interpreter {
 		return absEnv;
 	}
 	
+	/**
+	 * Negates the strided interval of the varnode input for an INT_NEGATE instruction
+	 * and puts the result in the abstract environment.
+	 * 
+	 * @param	pcode INT_NEGATE pcode instruction.
+	 * @return	void.
+	 */
 	private void _recordintneg(PcodeOp pcode) {
     	Varnode input0 = pcode.getInput(0), output = pcode.getOutput();
     	AccessedObject target, tmp = null;
@@ -171,10 +216,16 @@ class IRInterpreter extends Interpreter {
     		tmp = target.getCopy(); // create new AccessedObject to work on
     		target = calc.intMult(tmp, -1); // negate tmp stored value and set to target
     	}
-    	target = set(target,output,false); // set output's location to target
+    	target = set(target,output); // set output's location to target
     	absEnv.put(target.location,target); // put target into the table, overriding exisiting entry with same key if it exists
     }
-	
+	/**
+	 * Adds the strided interval of the varnode inputs for an INT_ADD instruction
+	 * and puts the result into the abstract environment.
+	 * 
+	 * @param	pcode INT_ADD pcode instruction.
+	 * @return	void.
+	 */
     private void _recordintadd(PcodeOp pcode) {
     	Varnode input0 = pcode.getInput(0), input1 = pcode.getInput(1), output = pcode.getOutput();
     	AccessedObject input0AO, input1AO, target = null, tmp0 = null, tmp1 = null;
@@ -209,10 +260,17 @@ class IRInterpreter extends Interpreter {
     			target = calc.intAdd(input0AO, input1AO); // arithmetic ;
     		}
     	}
-    	target = set(target,output,false);
+    	target = set(target,output);
     	absEnv.put(target.location,target);
     }
     
+	/**
+	 * Substracts the strided interval of the varnode inputs for an INT_SUB instruction
+	 * and puts the result into the abstract environment.
+	 * 
+	 * @param	pcode INT_SUB pcode instruction.
+	 * @return	void.
+	 */
     private void _recordintsub(PcodeOp pcode) {
     	Varnode input0 = pcode.getInput(0), input1 = pcode.getInput(1), output = pcode.getOutput();
     	AccessedObject input0AO, input1AO, target = null, tmp0 = null, tmp1 =null;
@@ -248,10 +306,17 @@ class IRInterpreter extends Interpreter {
     			target = calc.intSub(input0AO, input1AO);
     		}
     	}
-    	target = set(target,output,false);
+    	target = set(target,output);
     	absEnv.put(target.location,target);
     }
     
+	/**
+	 * Multiplies the strided interval of the varnode inputs for an INT_MULT instruction
+	 * and puts the result into the abstract environment.
+	 * 
+	 * @param	pcode INT_MULT pcode instruction.
+	 * @return	void.
+	 */
     private void _recordintmult(PcodeOp pcode) {
     	Varnode input0 = pcode.getInput(0), input1 = pcode.getInput(1), output = pcode.getOutput();
     	AccessedObject input0AO, input1AO, target, tmp0 = null, tmp1 = null;
@@ -285,10 +350,17 @@ class IRInterpreter extends Interpreter {
     			target = new AccessedObject(-1,0,0,input0.getSize(),Long.toString(input0.getOffset()));
     		}
     	}
-    	target = set(target,output,false);
+    	target = set(target,output);
     	absEnv.put(target.location,target);
     }
     
+	/**
+	 * Divides the strided interval of the varnode inputs for an INT_ADD instruction
+	 * and puts the result into the abstract environment.
+	 * 
+	 * @param	pcode INT_DIV pcode instruction.
+	 * @return	void.
+	 */
     private void _recordintdiv(PcodeOp pcode) {
     	Varnode input0 = pcode.getInput(0), input1 = pcode.getInput(1), output = pcode.getOutput();
     	AccessedObject input0AO, input1AO, target, tmp0 = null, tmp1 = null;
@@ -322,13 +394,18 @@ class IRInterpreter extends Interpreter {
     			target = new AccessedObject(-1,0,0,input0.getSize(),Long.toString(input0.getOffset()));
     		}
     	}
-    	target = set(target,output,false);
+    	target = set(target,output);
     	absEnv.put(target.location,target);
     }
     
-    //input0 	(special) Constant ID of space to store into.
-    //input1	Varnode containing pointer offset of destination.
-    //input2 	Varnode containing data to be stored.
+    /**
+	 * Copies the strided interval of the AccessedObject representing a varnode 
+	 * to the AccessedObject of another varnode according to the semantics of STORE instruction
+	 * and puts the result in the abstract environment
+	 * 
+	 * @param	pcode STORE pcode instruction.
+	 * @return	void.
+	 */
     private void _recordstore(PcodeOp pcode) {
     	Varnode input1 = pcode.getInput(1), input2 = pcode.getInput(2);
     	AccessedObject input1AO = get(input1), input2AO = get(input2), result;
@@ -341,9 +418,14 @@ class IRInterpreter extends Interpreter {
     	absEnv.put(input1AO.dataAsLoc(),result);
     }
 
-    //input0 	(special) Constant ID of space to store into.
-    //input1	Varnode containing pointer offset of source.
-    //output 	Destination varnode.
+    /**
+	 * Copies the strided interval of the AccessedObject representing a varnode 
+	 * to the AccessedObject of another varnode according to the sematics of LOAD instruction
+	 * and puts the result in the abstract environment
+	 * 
+	 * @param	pcode STORE pcode instruction.
+	 * @return	void.
+	 */
     private void _recordload(PcodeOp pcode) {
     	Varnode input1 = pcode.getInput(1), output = pcode.getOutput();
     	AccessedObject input1AO = get(input1),result,src;
@@ -361,6 +443,14 @@ class IRInterpreter extends Interpreter {
     	absEnv.put(result.location,result);
     }
     
+	/**
+	 * Copies the strided interval of the AccessedObject representing a varnode 
+	 * to the AccessedObject of another varnode according to the semantics of COPY instruction
+	 * and puts the result in the abstract environment
+	 * 
+	 * @param	pcode STORE pcode instruction.
+	 * @return	void.
+	 */
     private void _recordcopy(PcodeOp pcode) {
     	Varnode input0 = pcode.getInput(0), output = pcode.getOutput();
     	AccessedObject result = null;
@@ -399,6 +489,14 @@ class IRInterpreter extends Interpreter {
     	absEnv.put(result.location,result);
     }
     
+	/**
+	 * Sets the strided of the AccessedObject representing the output varnode
+	 * of a pcode instruction to -1. 
+	 * Indicating that the strided interval of the varnode is unknown.
+	 * 
+	 * @param	pcode Any other pcode instruction.
+	 * @return	void.
+	 */
     private void _recordunknown(PcodeOp pcode) { 
     	try {
     		Varnode output = pcode.getOutput();
@@ -407,19 +505,24 @@ class IRInterpreter extends Interpreter {
     	} catch(Exception e) {}
     }
     
-    /*
-     * Set location of AccessedObject to output's appropriate location & combine symbolic values
+    /**
+     * Sets the location of  target to the location of the AccessedObject representing the output.
+     * 
+     * @param target AccessedObject whose location will be updated.
+     * @param output Varnode whose representing AccessedObject's location will be used.
+     * @return updated AccessedObject target.
      */
-    private AccessedObject set(AccessedObject target, Varnode output,boolean isLoad) {
+    private AccessedObject set(AccessedObject target, Varnode output) {
     	AccessedObject dst = get(output);
     	target.location = dst.location;
     	return target;
     }
     
-    /*
-     * Retrieve AccessedObject associate to input from absEnv
-     * OR
-     * Create a new AccessedObject for input, put into absEnv & return AccessedObject
+    /**
+     * Retrieves the AccessedObject representing a varnode from the abstract environment using the varnode itself.
+     * 
+     * @param varnode Varnode whose representing AccessedObject we want to retrieve.
+     * @return AccessedObject representing varnode using.
      */
     public AccessedObject get(Varnode varnode) {
     	AccessedObject returnable;
@@ -444,6 +547,13 @@ class IRInterpreter extends Interpreter {
     	return returnable;
     }
     
+    /**
+     * Retrieves the AccessedObject representing a varnode from the abstract environment
+     * using a string the represents the varnode.
+     * 
+     * @param ID String representing varnode whose AccessedObject we want to retrieve.
+     * @return AccessedObject representing varnode
+     */
     private AccessedObject get(String ID) {
     	AccessedObject returnable = absEnv.get(ID);
     	
@@ -454,12 +564,21 @@ class IRInterpreter extends Interpreter {
     }
 }
 
-//maps a varnode hashCode to its strided interval
 class AccessedObject {
 public int stride, lwrBnd, uppBnd, size;
 public String symbolic = null;
 public String location; // strided interval || symbolic || symbolic + strided interval
 
+	/**
+	 * AccessedObject constructor
+	 * 
+	 * @param stride Integer stride value
+	 * @param lwrBnd Integer lower bound value for interval
+	 * @param uppBnd Integer upper bound value for interval
+	 * @param size Integer size of the varnode being represented
+	 * @param location String location of varnode which can be a constant value or a symbolic value + constant
+	 * @return AccessedObject representing a variable with the same attributes.
+	 */
 	public AccessedObject(int stride, int lwrBnd, int uppBnd, int size, String location) {
 		this.stride = stride;
 		this.lwrBnd = lwrBnd;
@@ -467,6 +586,12 @@ public String location; // strided interval || symbolic || symbolic + strided in
 		this.size = size;
 		this.location = location;
 	}
+	
+	/**
+	 * Formats AccessedObject attributes into a String
+	 * 
+	 * @return String representation of the AccessedObject
+	 */
 	public String toString() {
 		String printable;
 		if (stride == -1) {
@@ -491,6 +616,12 @@ public String location; // strided interval || symbolic || symbolic + strided in
 		} 
 		return printable;
 	}
+	
+	/**
+	 * Formats the strided interval and symbolic value of the AccessedObject to a String.
+	 * 
+	 * @return String representing a strided interval and the symbolic value if it exists.
+	 */
 	public String dataAsLoc() {
 		String loc;
 		if (symbolic == null) {
@@ -503,29 +634,65 @@ public String location; // strided interval || symbolic || symbolic + strided in
 		}
 		return loc;
 	}
+	
+	/**
+	 * Formats the strided interval of the AccessedObject to a String.
+	 * 
+	 * @return String representing a strided interval.
+	 */
 	public String SIString() {
 		String result = String.format(Integer.toString(stride) + 
 				"[" + Integer.toString(lwrBnd) + "," + Integer.toString(uppBnd) + "]");
 		return result;
 	}
+	
+	/**
+	 * Checks if the difference between 2 values is a multiple of the stride.
+	 * 
+	 * @param dst First integer value
+	 * @param value Second integer value
+	 * @return true difference between 2 values is a multiple of the stride. If not return false.
+	 */
 	public boolean diffInStride(int dst, int value) {
 		if (((dst-value)%stride) == 0) {return true;}
 		return false;
 	}
+	
+	/**
+	 * Duplicates the AccessedObject
+	 * 
+	 * @return AccessedObject which is an exact duplicate of the current AccessedObject
+	 */
 	public AccessedObject getCopy() {
 		AccessedObject tmp = new AccessedObject(stride,lwrBnd,uppBnd,size,location);
 		tmp.symbolic = symbolic;
 		return tmp;
 	}
+	
+	/**
+	 * Set stride of AccessedObject to -1 indicating strided interval is unknown.
+	 * 
+	 * @return void.
+	 */
 	public void unknown() {this.stride = -1;}
+	
+	/**
+	 * Checks if the AccessedObject has a unknown strided interval
+	 * 
+	 * @return true is stride == -1
+	 */
 	public boolean isUnknown() {return stride == -1;}
 }
 
-/*
- * does SI arithmetic and update symbolic part but no changes to offset, size, location
- */
 class VSACalculator {
 
+	/**
+	 * Adds a constant to a strided interval.
+	 * 
+	 * @param arg0 AccessedObject whose strided interval will be added
+	 * @param constant Integer value to be added 
+	 * @return AccessedObject with updated strided interval value
+	 */
 	public AccessedObject intAdd(AccessedObject arg0, int constant) {
 		if (arg0.stride == -1) { return arg0; }
 		
@@ -534,6 +701,13 @@ class VSACalculator {
 		return arg0;
 	}
 	
+	/**
+	 * Adds 2 strided intervals.
+	 * 
+	 * @param arg0 AccessedObject whose strided interval will be added to
+	 * @param arg1 AccessedObject whose strided interval will be used for addition
+	 * @return AccessedObject of arg0 with updated strided interval value
+	 */
 	public AccessedObject intAdd(AccessedObject arg0, AccessedObject arg1) {
 		
 		AccessedObject returnable;
@@ -595,6 +769,13 @@ class VSACalculator {
 		return returnable;
 	}
 	
+	/**
+	 * Subtracts a constant from a strided interval.
+	 * 
+	 * @param arg0 AccessedObject containing strided interval
+	 * @param constant Integer value to be used for subtraction 
+	 * @return AccessedObject with updated strided interval value
+	 */
 	public AccessedObject intSub(AccessedObject arg0, int constant) {
 		if (arg0.stride == -1) { return arg0; }
 		
@@ -603,6 +784,13 @@ class VSACalculator {
 		return arg0;
 	}
 	
+	/**
+	 * Subtracts 2 strided intervals.
+	 * 
+	 * @param arg0 AccessedObject containing strided interval to be subtracted from
+	 * @param arg1 AccessedObject containing strided interval used for subtraction
+	 * @return AccessedObject of arg0 with updated strided interval
+	 */
 	public AccessedObject intSub(AccessedObject arg0, AccessedObject arg1) {
 		AccessedObject returnable;
 		
@@ -660,6 +848,13 @@ class VSACalculator {
 		return returnable;
 	}
 	
+	/**
+	 * Multiplies a strided interval by a constant.
+	 * 
+	 * @param arg0 AccessedObject containing strided interval
+	 * @param magnitude Integer value to be used for multiplication 
+	 * @return AccessedObject with updated strided interval value
+	 */
 	public AccessedObject intMult(AccessedObject arg0, int magnitude) {
 		if (arg0.stride == -1) { return arg0; }
 		
@@ -669,6 +864,13 @@ class VSACalculator {
 		return arg0;
 	}
 	
+	/**
+	 * Divides a strided interval by a constant.
+	 * 
+	 * @param arg0 AccessedObject containing strided interval
+	 * @param magnitude Integer value to be used for division 
+	 * @return AccessedObject with updated strided interval value
+	 */
 	public AccessedObject intDiv(AccessedObject arg0, int magnitude) { //TO-DO
 		
 		if (arg0.stride == -1) { return arg0; }
