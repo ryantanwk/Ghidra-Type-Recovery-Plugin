@@ -1,0 +1,20 @@
+The program's output is divided into 2 sections, separated by the delimiter: "------------------ ABSTRACT DOMAIN ------------------"
+
+Output above the delimiter is made up of entries of pcode in execution order along with its input & output varnodes. 
+Entries are formatted as such: "<output varnode> = <pcode> <input0 varnode> <input1 varnode> ....."
+
+Each Varnode is represented by:
+1. Location - This value can be a constant (1600), a register (RAX), or an interval with a symbolic value (RSP + 1[-8,-8]). 
+    Constant value locations indicate that the varnode represents a temporary variable create by Ghidra, that does not exist on the function stack
+    Register value locations indicate that the varnode represents a register
+    Interval value locations with symbolic value indicate that the varnode might represent a stack variable located at a offset, 
+    represented by the strided interval, from the symbolic value.
+    
+2. Size - Ghidra's predicted size of the data stored in the Varnode
+
+3. Interval - This value can be a strided interval (4[13,21]) that may or may not have a symbolic part (RSP)
+    Strided intervals are made up of 3 values, a stride, lower bound and upper bound. It represents a set of values starting from the lower bound
+    with increments of the stride until the upper bound. For example, 4[13,21] represents the values 13, 17, 21.
+    
+NOTE: Although strided interval is used, the program only ever produces strided intervals of constant values e.g. 1[-8,-8]. 
+This is because the program only processes integer-manipulating pcodes i.e. INT_ADD, INT_SUB, INT_NEGATE
